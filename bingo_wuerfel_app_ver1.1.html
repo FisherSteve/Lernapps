@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multiplikations-Bingo mit n-seitigen Würfeln</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(99,102,241,0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(16,185,129,0.16), transparent 24%),
+        linear-gradient(180deg, #f8fafc, #eef2ff 45%, #f8fafc);
+      min-height: 100vh;
+    }
+    .glass {
+      backdrop-filter: blur(10px);
+      background: rgba(255,255,255,0.76);
+      box-shadow: 0 16px 40px rgba(15,23,42,0.10);
+      border: 1px solid rgba(255,255,255,0.7);
+    }
+    .dice-face {
+      background: linear-gradient(145deg, #ffffff, #eef2ff);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 14px 30px rgba(79,70,229,0.16);
+      border: 1px solid rgba(99,102,241,0.16);
+    }
+    .bingo-cell { aspect-ratio: 1 / 1; }
+    .bingo-preview {
+      display: grid;
+      gap: 0.4rem;
+      background: #e2e8f0;
+      padding: 0.4rem;
+      border-radius: 1rem;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function shuffle(array) {
+      const copy = [...array];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function buildTaskPool(n) {
+      const tasks = [];
+      for (let a = 1; a <= n; a++) {
+        for (let b = 1; b <= n; b++) {
+          tasks.push({ a, b, product: a * b, id: `${a}x${b}` });
+        }
+      }
+      return tasks;
+    }
+
+    function formatTask(task) {
+      return `${task.a} · ${task.b}`;
+    }
+
+    function buildProductPool(n) {
+      return Array.from(new Set(buildTaskPool(n).map(task => task.product)))
+        .sort((a, b) => a - b)
+        .map(product => ({ product, id: `p-${product}` }));
+    }
+
+    function generateUniqueCards({ n, size, count }) {
+      const pool = buildProductPool(n);
+      const cellsPerCard = size * size;
+
+      if (pool.length < cellsPerCard) {
+        throw new Error(`Für ein ${size}×${size}-Bingo mit n=${n} gibt es zu wenige verschiedene Ergebnisse. Benötigt: ${cellsPerCard}, verfügbar: ${pool.length}.`);
+      }
+
+      const cards = [];
+      const signatures = new Set();
+      let attempts = 0;
+      const maxAttempts = Math.max(5000, count * 400);
+
+      while (cards.length < count && attempts < maxAttempts) {
+        attempts += 1;
+        const selection = shuffle(pool).slice(0, cellsPerCard);
+        const signature = selection.map(item => item.id).sort().join('|');
+
+        if (!signatures.has(signature)) {
+          signatures.add(signature);
+          cards.push({ id: cards.length + 1, entries: selection });
+        }
+      }
+
+      if (cards.length < count) {
+        throw new Error('Es konnten nicht genügend einzigartige Bingo-Karten erzeugt werden. Erhöhe n oder reduziere Anzahl bzw. Rastergröße.');
+      }
+
+      return cards;
+    }
+
+    function Dice({ value, sides, label }) {
+      const fontSize = String(value).length >= 3 ? 'text-3xl' : String(value).length === 2 ? 'text-4xl' : 'text-5xl';
+      return (
+        <div className="flex flex-col items-center gap-3">
+          <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{label}</div>
+          <div className="dice-face h-28 w-28 rounded-3xl flex items-center justify-center">
+            <span className={`${fontSize} font-black text-indigo-600 select-none`}>{value}</span>
+          </div>
+          <div className="text-xs text-slate-500">1 bis {sides}</div>
+        </div>
+      );
+    }
+
+    function BingoCard({ card, size, title }) {
+      return (
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.25em] text-indigo-500 font-bold">Bingo</div>
+              <div className="text-lg font-bold text-slate-800">{title}</div>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">{size} × {size}</div>
+          </div>
+          <div className="bingo-preview" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
+            {card.entries.map((entry, idx) => (
+              <div
+                key={`${card.id}-${idx}-${entry.id}`}
+                className="bingo-cell rounded-2xl bg-white p-2 flex items-center justify-center text-center border border-slate-200"
+              >
+                <div className="text-[clamp(0.72rem,1.3vw,0.95rem)] leading-tight font-semibold text-slate-700 break-words">
+                  {entry.product}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [sides, setSides] = useState(6);
+      const [gridSize, setGridSize] = useState(4);
+      const [cardCount, setCardCount] = useState(4);
+      const [die1, setDie1] = useState(1);
+      const [die2, setDie2] = useState(1);
+      const [history, setHistory] = useState([]);
+      const [remainingProducts, setRemainingProducts] = useState([]);
+      const [cards, setCards] = useState([]);
+      const [error, setError] = useState('');
+      const [adminMode, setAdminMode] = useState(false);
+
+      const productTaskMap = useMemo(() => {
+        const map = new Map();
+        buildTaskPool(sides).forEach(task => {
+          if (!map.has(task.product)) map.set(task.product, []);
+          map.get(task.product).push(task);
+        });
+        return map;
+      }, [sides]);
+
+      const uniqueProductValues = useMemo(() => Array.from(productTaskMap.keys()).sort((a, b) => a - b), [productTaskMap]);
+
+      useEffect(() => {
+        setRemainingProducts(uniqueProductValues);
+        setHistory([]);
+        setDie1(1);
+        setDie2(1);
+      }, [uniqueProductValues]);
+
+      const poolStats = useMemo(() => {
+        const totalTasks = sides * sides;
+        const uniqueProducts = buildProductPool(sides).length;
+        return { totalTasks, uniqueProducts };
+      }, [sides]);
+
+      function rollDice() {
+        if (remainingProducts.length === 0) {
+          setError('Alle möglichen Ergebnisse dieser Spielrunde wurden bereits gezogen. Setze die Runde zurück, um erneut zu starten.');
+          return;
+        }
+
+        const selectedProduct = remainingProducts[randomInt(0, remainingProducts.length - 1)];
+        const matchingTasks = productTaskMap.get(selectedProduct) || [];
+        const task = matchingTasks[randomInt(0, matchingTasks.length - 1)];
+
+        setDie1(task.a);
+        setDie2(task.b);
+        setRemainingProducts(prev => prev.filter(product => product !== selectedProduct));
+        setHistory(prev => [{ a: task.a, b: task.b, product: selectedProduct, timestamp: new Date().toLocaleTimeString('de-DE') }, ...prev].slice(0, 12));
+        setError('');
+      }
+
+      function resetRound() {
+        setRemainingProducts(uniqueProductValues);
+        setHistory([]);
+        setDie1(1);
+        setDie2(1);
+        setError('');
+      }
+
+      function handleGenerateCards() {
+        try {
+          const generated = generateUniqueCards({ n: sides, size: gridSize, count: cardCount });
+          setCards(generated);
+          setError('');
+        } catch (err) {
+          setCards([]);
+          setError(err.message || 'Fehler beim Erstellen der Bingo-Karten.');
+        }
+      }
+
+      function drawCardOnPdf(doc, card, pageSlot, options) {
+        const { size } = options;
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const marginX = 12;
+        const gapY = 10;
+        const slotHeight = (pageHeight - 20 - gapY) / 2;
+        const slotY = pageSlot === 0 ? 10 : 10 + slotHeight + gapY;
+        const cardX = marginX;
+        const cardY = slotY;
+        const cardW = pageWidth - marginX * 2;
+        const headerH = 18;
+        const innerPad = 4;
+        const gridW = cardW - innerPad * 2;
+        const gridH = slotHeight - headerH - innerPad * 2 - 4;
+        const cellW = gridW / size;
+        const cellH = gridH / size;
+
+        doc.setDrawColor(203, 213, 225);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(cardX, cardY, cardW, slotHeight, 5, 5, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(79, 70, 229);
+        doc.setFontSize(11);
+        doc.text(`Multiplikations-Bingo #${card.id}`, cardX + 5, cardY + 8);
+
+        doc.setTextColor(51, 65, 85);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.text(`n = ${sides} | Raster ${size}×${size} | Inhalt: Ergebnisse`, cardX + 5, cardY + 14);
+
+        const startX = cardX + innerPad;
+        const startY = cardY + headerH + innerPad;
+
+        for (let row = 0; row < size; row++) {
+          for (let col = 0; col < size; col++) {
+            const idx = row * size + col;
+            const entry = card.entries[idx];
+            const x = startX + col * cellW;
+            const y = startY + row * cellH;
+            doc.setDrawColor(203, 213, 225);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(x, y, cellW, cellH, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(30, 41, 59);
+            const text = String(entry.product);
+            const fontSize = Math.max(9, Math.min(14, cellW / 4));
+            doc.setFontSize(fontSize);
+            const lines = doc.splitTextToSize(text, cellW - 4);
+            const totalHeight = lines.length * (fontSize * 0.38);
+            let textY = y + (cellH / 2) - totalHeight / 2 + 2;
+            lines.forEach(line => {
+              const textWidth = doc.getTextWidth(line);
+              const textX = x + (cellW - textWidth) / 2;
+              doc.text(line, textX, textY);
+              textY += fontSize * 0.38 + 1.5;
+            });
+          }
+        }
+      }
+
+      function exportPdf() {
+        try {
+          if (!cards.length) {
+            setError('Erstelle zuerst Bingo-Karten, bevor du das PDF exportierst.');
+            return;
+          }
+
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+          cards.forEach((card, index) => {
+            if (index > 0 && index % 2 === 0) doc.addPage();
+            drawCardOnPdf(doc, card, index % 2, { size: gridSize });
+          });
+
+          const filename = `multiplikations-bingo_n${sides}_${gridSize}x${gridSize}_${cardCount}-karten.pdf`;
+          doc.save(filename);
+          setError('');
+        } catch (err) {
+          setError(err.message || 'PDF konnte nicht erstellt werden.');
+        }
+      }
+
+      return (
+        <div className="min-h-screen px-4 py-8 text-slate-800">
+          <div className="mx-auto max-w-7xl">
+            <div className="glass rounded-[2rem] p-6 md:p-8">
+              <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                <div className="max-w-3xl">
+                  <div className="inline-flex rounded-full bg-indigo-100 px-4 py-1 text-sm font-bold text-indigo-700">
+                    Multiplikations-Bingo Generator
+                  </div>
+                  <h1 className="mt-4 text-3xl md:text-5xl font-black tracking-tight text-slate-900">
+                    n-seitige Würfel und Bingo-Karten als PDF
+                  </h1>
+                  <p className="mt-4 text-base md:text-lg text-slate-600 leading-relaxed">
+                    Im Spielmodus werden nur die beiden Würfel und die Multiplikationsaufgabe angezeigt — ohne Ergebnis.
+                    Im Admin-Modus lassen sich eindeutige Bingo-Karten aus allen möglichen Ergebnissen erzeugen und als A4-PDF mit jeweils zwei Karten pro Seite exportieren.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:w-[28rem]">
+                  <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Mögliche Aufgaben</div>
+                    <div className="mt-2 text-2xl font-black text-slate-800">{poolStats.totalTasks}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Versch. Produkte</div>
+                    <div className="mt-2 text-2xl font-black text-slate-800">{poolStats.uniqueProducts}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Bingo-Karten</div>
+                    <div className="mt-2 text-2xl font-black text-slate-800">{cards.length}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Modus</div>
+                    <div className="mt-2 text-xl font-black text-indigo-600">{adminMode ? 'Admin' : 'Spiel'}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                <button
+                  onClick={() => setAdminMode(false)}
+                  className={`rounded-2xl px-5 py-3 font-bold transition ${!adminMode ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'}`}
+                >
+                  Spielmodus
+                </button>
+                <button
+                  onClick={() => setAdminMode(true)}
+                  className={`rounded-2xl px-5 py-3 font-bold transition ${adminMode ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'}`}
+                >
+                  Admin-Modus
+                </button>
+              </div>
+
+              {!adminMode ? (
+                <div className="mt-8 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                  <div className="space-y-6">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                        <h2 className="text-xl font-bold text-slate-900">Spieleinstellungen</h2>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 md:col-span-2">Noch verfügbare Ergebnisse in dieser Runde: <span className="font-bold text-slate-900">{remainingProducts.length}</span> von <span className="font-bold text-slate-900">{poolStats.uniqueProducts}</span></div>
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-semibold text-slate-600">Seitenzahl n</span>
+                          <input type="number" min="2" max="50" value={sides} onChange={e => setSides(Math.max(2, Number(e.target.value) || 2))}
+                            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                        <h2 className="text-xl font-bold text-slate-900">Würfel-Simulation</h2>
+                        <div className="flex flex-wrap gap-3">
+                          <button onClick={rollDice} disabled={remainingProducts.length === 0} className={`rounded-2xl px-5 py-3 font-bold text-white shadow-lg transition ${remainingProducts.length === 0 ? 'bg-slate-300 shadow-none cursor-not-allowed' : 'bg-emerald-500 shadow-emerald-200 hover:-translate-y-0.5 hover:bg-emerald-600'}`}>
+                            Zwei Würfel werfen
+                          </button>
+                          <button onClick={resetRound} className="rounded-2xl bg-slate-100 px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-200">
+                            Runde zurücksetzen
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-6 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
+                        <Dice value={die1} sides={sides} label="Würfel A" />
+                        <div className="text-center text-4xl font-black text-slate-300">·</div>
+                        <Dice value={die2} sides={sides} label="Würfel B" />
+                        <div className="text-center text-4xl font-black text-slate-300">=</div>
+                        <div className="rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-600 px-6 py-8 text-center text-white shadow-xl">
+                          <div className="text-xs uppercase tracking-[0.25em] text-indigo-100">Aufgabe</div>
+                          <div className="mt-3 text-5xl font-black">{die1} · {die2}</div>
+                          <div className="mt-3 text-sm font-medium text-indigo-100">Ergebnis bleibt verborgen.</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <h2 className="text-xl font-bold text-slate-900">Letzte Würfe</h2>
+                      <div className="mt-4 space-y-2 max-h-[22rem] overflow-auto pr-1">
+                        {history.length === 0 ? (
+                          <div className="rounded-2xl bg-slate-50 p-4 text-slate-500">Noch keine Würfe vorhanden.</div>
+                        ) : history.map((entry, idx) => (
+                          <div key={`${entry.timestamp}-${idx}`} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                            <div><div className="font-semibold text-slate-700">{entry.a} · {entry.b}</div><div className="text-xs text-slate-400">Produkt wurde aus der Runde entfernt</div></div>
+                            <div className="text-xs text-slate-400">{entry.timestamp}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <h2 className="text-xl font-bold text-slate-900">Hinweise</h2>
+                      <div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-600">
+                        <p>Im Spielmodus wird nur die Aufgabe angezeigt, nie das Resultat.</p>
+                        <p>Jedes Ergebnis wird pro Runde nur einmal gezogen, auch wenn es mehrere Aufgaben mit demselben Produkt gibt.</p>
+                        <p>Die PDF-Erstellung ist ausschließlich im Admin-Modus verfügbar.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-8 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                  <div className="space-y-6">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                        <h2 className="text-xl font-bold text-slate-900">Admin-Bereich</h2>
+                        <div className="text-sm text-slate-500">Nur PDF-Erstellung</div>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-semibold text-slate-600">Seitenzahl n</span>
+                          <input type="number" min="2" max="50" value={sides} onChange={e => setSides(Math.max(2, Number(e.target.value) || 2))}
+                            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-semibold text-slate-600">Bingo-Raster m</span>
+                          <input type="number" min="2" max="8" value={gridSize} onChange={e => setGridSize(Math.max(2, Math.min(8, Number(e.target.value) || 2)))}
+                            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-semibold text-slate-600">Anzahl Karten</span>
+                          <input type="number" min="1" max="100" value={cardCount} onChange={e => setCardCount(Math.max(1, Number(e.target.value) || 1))}
+                            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" />
+                        </label>
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap gap-3">
+                        <button onClick={handleGenerateCards} className="rounded-2xl bg-indigo-600 px-5 py-3 font-bold text-white shadow-lg shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700">
+                          Bingo-Karten erzeugen
+                        </button>
+                        <button onClick={exportPdf} className="rounded-2xl bg-slate-900 px-5 py-3 font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5 hover:bg-slate-800">
+                          PDF exportieren
+                        </button>
+                        <button onClick={() => { setCards([]); setError(''); }} className="rounded-2xl bg-slate-100 px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-200">
+                          Karten löschen
+                        </button>
+                      </div>
+
+                      {error && (
+                        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
+                          {error}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <h2 className="text-xl font-bold text-slate-900">Hinweise für den Druck</h2>
+                      <div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-600">
+                        <p>Alle Bingo-Felder enthalten ausschließlich Aufgaben im Format a · b.</p>
+                        <p>Jede Karte wird zufällig erzeugt und als Kartenmenge eindeutig gehalten.</p>
+                        <p>Im PDF liegen immer zwei Bingo-Karten auf einer A4-Seite.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {adminMode && (
+              <div className="mt-8">
+                <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                  <h2 className="text-2xl font-black text-slate-900">Vorschau der Bingo-Karten</h2>
+                  <div className="text-sm text-slate-500">Aktuell {cards.length} Karte(n) erzeugt</div>
+                </div>
+
+                {cards.length === 0 ? (
+                  <div className="glass rounded-3xl p-10 text-center text-slate-500">
+                    Erzeuge zunächst Bingo-Karten, um hier eine Vorschau zu sehen.
+                  </div>
+                ) : (
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    {cards.map(card => (
+                      <BingoCard key={card.id} card={card} size={gridSize} title={`Karte #${card.id}`} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

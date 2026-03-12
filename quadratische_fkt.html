@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quadratische Funktionen entdecken</title>
+  <style>
+    :root{
+      --bg:#f4f7fc;
+      --panel:#ffffff;
+      --panel2:#f8fbff;
+      --text:#1f2a44;
+      --muted:#5d6985;
+      --line:#d7e0f1;
+      --grid:#e8eef9;
+      --gridStrong:#cbd7ef;
+      --blue:#2f74dd;
+      --cyan:#0ea5a4;
+      --violet:#8b5cf6;
+      --orange:#f97316;
+      --gold:#f59e0b;
+      --green:#16a34a;
+      --red:#ef4444;
+      --gray:#94a3b8;
+      --shadow:0 14px 36px rgba(22,35,75,.12);
+      --radius:22px;
+      --focus:0 0 0 3px rgba(47,116,221,.22);
+    }
+
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:linear-gradient(180deg,#f2f6ff 0%,#eef3fb 100%);color:var(--text);font-family:Inter,Segoe UI,Roboto,Arial,sans-serif}
+    button,input,select{font:inherit}
+    button{cursor:pointer}
+
+    .app{max-width:1500px;margin:0 auto;padding:22px}
+    .hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:18px}
+    .hero h1{margin:0 0 8px;font-size:clamp(1.8rem,3vw,2.7rem);line-height:1.04}
+    .hero p{margin:0;max-width:920px;color:var(--muted);font-size:1rem}
+    .badges{display:flex;gap:10px;flex-wrap:wrap}
+    .badge{
+      background:rgba(255,255,255,.9);
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:10px 14px;
+      color:var(--muted);
+      box-shadow:var(--shadow);
+      white-space:nowrap;
+      font-size:.94rem;
+    }
+
+    .layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.9fr);gap:18px;align-items:start}
+    .bottom{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px}
+
+    .panel{
+      background:rgba(255,255,255,.95);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .panel-inner{padding:18px}
+    .panel-title{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}
+    .panel-title h2{margin:0;font-size:1.2rem}
+    .panel-title p{margin:4px 0 0;color:var(--muted);font-size:.95rem}
+
+    .formula-bar{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+    .formula-chip{
+      background:linear-gradient(180deg,#fcfdff 0%,#f1f6ff 100%);
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:12px 14px;
+      min-height:68px;
+    }
+    .formula-chip .label{font-size:.84rem;color:var(--muted);margin-bottom:6px}
+    .formula-chip .math{font-weight:700;font-size:1.05rem;line-height:1.35;word-break:break-word}
+
+    .graph-shell{padding:0 18px 18px}
+    .graph-wrap{
+      position:relative;
+      border:1px solid var(--line);
+      border-radius:20px;
+      overflow:hidden;
+      background:linear-gradient(180deg,#fcfdff 0%,#f4f8ff 100%);
+      min-height:560px;
+    }
+    svg#graph{
+      display:block;
+      width:100%;
+      height:auto;
+      background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(241,246,255,.95));
+      touch-action:none;
+      user-select:none;
+    }
+    .graph-tip{
+      position:absolute;top:12px;right:12px;
+      background:rgba(255,255,255,.92);
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:8px 12px;
+      box-shadow:0 10px 24px rgba(22,35,75,.08);
+      color:var(--muted);
+      font-size:.9rem;
+      pointer-events:none;
+    }
+    .graph-info{
+      margin-top:12px;
+      padding:12px 14px;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:var(--panel2);
+      min-height:60px;
+      line-height:1.35;
+    }
+    .graph-info small{color:var(--muted)}
+
+    .legend{display:flex;gap:10px 14px;flex-wrap:wrap;margin-top:12px}
+    .legend-item{
+      display:inline-flex;align-items:center;gap:8px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:8px 12px;
+      background:rgba(255,255,255,.8);
+      color:var(--muted);
+      font-size:.94rem;
+    }
+    .dot{width:12px;height:12px;border-radius:50%}
+
+    .control-grid{display:grid;gap:14px}
+    .subcard{
+      background:linear-gradient(180deg,#fcfdff 0%,#f5f9ff 100%);
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:14px;
+    }
+    .subcard h3{margin:0 0 10px;font-size:1rem}
+    .subcard p{margin:0;color:var(--muted);font-size:.93rem;line-height:1.35}
+
+    .preset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+    .preset-btn{
+      text-align:left;
+      border:1px solid var(--line);
+      background:#fff;
+      border-radius:16px;
+      padding:12px;
+      min-height:84px;
+      transition:.16s ease;
+    }
+    .preset-btn:hover{transform:translateY(-1px);border-color:#b9c9ef}
+    .preset-btn.active{border-color:rgba(47,116,221,.55);box-shadow:var(--focus);background:linear-gradient(180deg,#fff 0%,#eef5ff 100%)}
+    .preset-btn strong{display:block;margin-bottom:5px;color:var(--text);font-size:.96rem}
+    .preset-btn span{display:block;color:var(--muted);font-size:.86rem;line-height:1.25}
+
+    .slider-row{
+      display:grid;
+      grid-template-columns:80px minmax(0,1fr) 96px;
+      gap:12px;
+      align-items:center;
+      margin:10px 0;
+    }
+    .slider-row label{font-weight:700;font-size:.96rem}
+    .slider-row input[type="range"]{width:100%;accent-color:var(--blue)}
+    .slider-row input[type="number"], .slider-row select{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:9px 10px;
+      background:#fff;
+      color:var(--text);
+    }
+
+    .inline-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .field{display:grid;gap:6px}
+    .field label{font-size:.9rem;color:var(--muted)}
+
+    .toggle-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+    .toggle{
+      display:flex;gap:10px;align-items:flex-start;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px 12px;
+      background:#fff;
+    }
+    .toggle input{margin-top:2px;transform:scale(1.15);accent-color:var(--blue)}
+    .toggle b{display:block;font-size:.94rem}
+    .toggle span span{display:block;color:var(--muted);font-size:.84rem;line-height:1.25;margin-top:2px}
+
+    .hint{
+      margin-top:10px;
+      border:1px solid #cddfff;
+      border-radius:16px;
+      padding:12px 13px;
+      background:linear-gradient(180deg,#eff6ff 0%,#e8f2ff 100%);
+      color:#244377;
+      font-size:.93rem;
+      line-height:1.35;
+    }
+    .hint.warn{
+      background:linear-gradient(180deg,#fff8eb 0%,#fff3d8 100%);
+      border-color:#f5d28c;
+      color:#7a4b00;
+    }
+
+    .action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .btn{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#fff;
+      color:var(--text);
+      padding:10px 13px;
+      transition:.16s ease;
+    }
+    .btn:hover{transform:translateY(-1px)}
+    .btn.primary{background:linear-gradient(180deg,#4d95ff 0%,#2f74dd 100%);border-color:#2f74dd;color:#fff}
+
+    .info-list,.mini-list{display:grid;gap:10px}
+    .info-item{
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:12px 13px;
+      background:linear-gradient(180deg,#fff 0%,#f7faff 100%);
+    }
+    .info-item h4{margin:0 0 6px;font-size:1rem}
+    .info-item p{margin:0;color:var(--muted);font-size:.94rem;line-height:1.35}
+
+    .table-wrap{
+      overflow:auto;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:#fff;
+    }
+    table{width:100%;border-collapse:collapse;min-width:360px}
+    th,td{padding:10px 12px;text-align:center;border-bottom:1px solid #e8eef9;font-size:.95rem}
+    thead th{background:#f4f7fd;position:sticky;top:0;z-index:1}
+    tbody tr:nth-child(odd){background:#fcfdff}
+    tbody tr:hover{background:#eef5ff}
+
+    .formula-box{
+      margin-top:10px;
+      background:#fff;
+      border:1px dashed #c8d7f5;
+      border-radius:14px;
+      padding:11px 12px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      color:#23406f;
+      font-size:.95rem;
+      line-height:1.45;
+      word-break:break-word;
+    }
+
+    details{
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:linear-gradient(180deg,#fff 0%,#f7faff 100%);
+      padding:10px 12px;
+    }
+    details+details{margin-top:10px}
+    summary{cursor:pointer;font-weight:700;list-style:none;outline:none}
+    summary::-webkit-details-marker{display:none}
+    details[open] summary{margin-bottom:8px}
+    .task-body{color:var(--muted);font-size:.94rem;line-height:1.38}
+    .task-body .mini-buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+    .tooltip{
+      position:fixed;
+      z-index:9999;
+      max-width:280px;
+      padding:10px 12px;
+      border-radius:14px;
+      background:rgba(24,36,62,.96);
+      color:#fff;
+      font-size:.9rem;
+      line-height:1.3;
+      box-shadow:0 14px 30px rgba(0,0,0,.22);
+      pointer-events:none;
+      transform:translate(12px,12px);
+    }
+    .hidden{display:none !important}
+    .foot{margin-top:12px;color:var(--muted);font-size:.89rem}
+
+    input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible, [tabindex="0"]:focus-visible{
+      outline:none;
+      box-shadow:var(--focus);
+    }
+
+    @media (max-width:1180px){
+      .layout{grid-template-columns:1fr}
+      .bottom{grid-template-columns:1fr}
+      .graph-wrap{min-height:500px}
+    }
+
+    @media (max-width:760px){
+      .app{padding:14px}
+      .formula-bar{grid-template-columns:1fr}
+      .preset-grid{grid-template-columns:1fr}
+      .toggle-grid{grid-template-columns:1fr}
+      .inline-grid{grid-template-columns:1fr}
+      .slider-row{grid-template-columns:72px minmax(0,1fr) 88px}
+      .graph-wrap{min-height:430px}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <div>
+        <h1>Quadratische Funktionen entdecken</h1>
+        <p>Ziehe Punkte, ändere Regler und vergleiche verschiedene Darstellungen. So siehst du sofort, wie sich <b>a</b>, <b>b</b>, <b>c</b>, der Scheitelpunkt, Nullstellen und Schnittpunkte verändern.</p>
+      </div>
+      <div class="badges">
+        <div class="badge">Ziehe <b>S</b> = Scheitelpunkt</div>
+        <div class="badge">Ziehe <b>A</b> = Streckung/Stauchung</div>
+        <div class="badge">Ziehe <b>C</b> = y-Achsenabschnitt</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <div class="panel-inner">
+          <div class="panel-title">
+            <div>
+              <h2>Interaktive Visualisierung</h2>
+              <p>Blau ist deine aktuelle Parabel. Optional kannst du die Normalparabel, eine Gerade oder eine zweite Parabel einblenden.</p>
+            </div>
+          </div>
+
+          <div class="formula-bar">
+            <div class="formula-chip">
+              <div class="label">Allgemeine Form</div>
+              <div class="math" id="generalFormula">f(x) = x²</div>
+            </div>
+            <div class="formula-chip">
+              <div class="label">Scheitelpunktform</div>
+              <div class="math" id="vertexFormula">f(x) = (x − 0)² + 0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="graph-shell">
+          <div class="graph-wrap">
+            <svg id="graph" viewBox="0 0 800 520" role="img" aria-label="Koordinatensystem mit quadratischer Funktion"></svg>
+            <div class="graph-tip">Tipp: Ziehe S, A oder C direkt im Koordinatensystem.</div>
+          </div>
+
+          <div class="graph-info" id="graphInfo"></div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-inner">
+          <div class="panel-title">
+            <div>
+              <h2>Steuerbereich</h2>
+              <p>Alle Ansichten aktualisieren sich sofort. Du kannst mit Reglern oder direkt im Graphen arbeiten.</p>
+            </div>
+          </div>
+
+          <div class="control-grid">
+            <section class="subcard">
+              <h3>Presets mit Kontext</h3>
+              <p>Jeder Fall zeigt eine typische Form aus Alltag oder Unterricht.</p>
+              <div class="preset-grid" id="presetGrid"></div>
+              <div class="hint" id="presetDesc">Wähle ein Preset.</div>
+            </section>
+
+            <section class="subcard">
+              <h3>Allgemeine Form: ax² + bx + c</h3>
+              <p><b>a</b> bestimmt Öffnung und Breite, <b>b</b> verschiebt die Symmetrieachse, <b>c</b> ist der y-Achsenabschnitt.</p>
+
+              <div class="slider-row">
+                <label for="aRange">a</label>
+                <input id="aRange" type="range" min="-3" max="3" step="0.1" />
+                <input id="aNumber" type="number" min="-3" max="3" step="0.1" />
+              </div>
+              <div class="slider-row">
+                <label for="bRange">b</label>
+                <input id="bRange" type="range" min="-10" max="10" step="0.1" />
+                <input id="bNumber" type="number" min="-10" max="10" step="0.1" />
+              </div>
+              <div class="slider-row">
+                <label for="cRange">c</label>
+                <input id="cRange" type="range" min="-10" max="10" step="0.1" />
+                <input id="cNumber" type="number" min="-10" max="10" step="0.1" />
+              </div>
+            </section>
+
+            <section class="subcard">
+              <h3>Scheitelpunktform: a(x − d)² + e</h3>
+              <p>Hier kannst du den Scheitelpunkt direkt setzen. Das macht Verschiebungen meist leichter sichtbar.</p>
+
+              <div class="slider-row">
+                <label for="dRange">d</label>
+                <input id="dRange" type="range" min="-6" max="6" step="0.1" />
+                <input id="dNumber" type="number" min="-6" max="6" step="0.1" />
+              </div>
+              <div class="slider-row">
+                <label for="eRange">e</label>
+                <input id="eRange" type="range" min="-9" max="9" step="0.1" />
+                <input id="eNumber" type="number" min="-9" max="9" step="0.1" />
+              </div>
+
+              <div class="hint warn">
+                <strong>Typischer Fehler:</strong> In <b>(x − d)²</b> bedeutet ein positives <b>d</b> eine Verschiebung <b>nach rechts</b>. Die Zahl in der Klammer hat also das „umgekehrte“ Vorzeichen.
+              </div>
+            </section>
+
+            <section class="subcard">
+              <h3>Einblendungen</h3>
+              <div class="toggle-grid">
+                <label class="toggle">
+                  <input id="showNormal" type="checkbox" checked />
+                  <span><b>Normalparabel</b><span>Vergleich mit f(x)=x².</span></span>
+                </label>
+                <label class="toggle">
+                  <input id="showAxis" type="checkbox" checked />
+                  <span><b>Symmetrieachse</b><span>Zeigt die Mitte der Parabel.</span></span>
+                </label>
+                <label class="toggle">
+                  <input id="showTriangle" type="checkbox" checked />
+                  <span><b>Dreieck aus 3 Punkten</b><span>Mit Nullstellen und y-Achsenabschnitt.</span></span>
+                </label>
+                <label class="toggle">
+                  <input id="showLabels" type="checkbox" checked />
+                  <span><b>Beschriftungen</b><span>Koordinaten direkt am Graphen.</span></span>
+                </label>
+              </div>
+            </section>
+
+            <section class="subcard">
+              <h3>Vergleich und Schnittpunkte</h3>
+              <div class="inline-grid">
+                <div class="field">
+                  <label for="compareMode">Vergleichsobjekt</label>
+                  <select id="compareMode">
+                    <option value="none">Kein Vergleich</option>
+                    <option value="line">Gerade</option>
+                    <option value="parabola">Zweite Parabel</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="comparePreset">Schnellwahl</label>
+                  <select id="comparePreset">
+                    <option value="line1">Steigende Gerade</option>
+                    <option value="line2">Fallende Gerade</option>
+                    <option value="para1">Breite Vergleichsparabel</option>
+                    <option value="para2">Nach unten geöffnet</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="lineControls" class="hidden">
+                <div class="slider-row">
+                  <label for="mRange">m</label>
+                  <input id="mRange" type="range" min="-4" max="4" step="0.1" />
+                  <input id="mNumber" type="number" min="-4" max="4" step="0.1" />
+                </div>
+                <div class="slider-row">
+                  <label for="nRange">n</label>
+                  <input id="nRange" type="range" min="-10" max="10" step="0.1" />
+                  <input id="nNumber" type="number" min="-10" max="10" step="0.1" />
+                </div>
+              </div>
+
+              <div id="paraControls" class="hidden">
+                <div class="slider-row">
+                  <label for="a2Range">a₂</label>
+                  <input id="a2Range" type="range" min="-3" max="3" step="0.1" />
+                  <input id="a2Number" type="number" min="-3" max="3" step="0.1" />
+                </div>
+                <div class="slider-row">
+                  <label for="b2Range">b₂</label>
+                  <input id="b2Range" type="range" min="-10" max="10" step="0.1" />
+                  <input id="b2Number" type="number" min="-10" max="10" step="0.1" />
+                </div>
+                <div class="slider-row">
+                  <label for="c2Range">c₂</label>
+                  <input id="c2Range" type="range" min="-10" max="10" step="0.1" />
+                  <input id="c2Number" type="number" min="-10" max="10" step="0.1" />
+                </div>
+              </div>
+            </section>
+
+            <section class="subcard">
+              <h3>Schnellaktionen</h3>
+              <p>Für Unterricht und Üben sind klare Startfälle oft hilfreicher als viele kleine Klicks.</p>
+              <div class="action-row">
+                <button class="btn primary" id="resetBtn" type="button">Zur Normalparabel</button>
+                <button class="btn" id="mentalBtn" type="button">Kopfrechen-Fall</button>
+                <button class="btn" id="randomBtn" type="button">Neuer Übungsfall</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <section class="bottom">
+      <section class="panel">
+        <div class="panel-inner">
+          <div class="panel-title">
+            <div>
+              <h2>Was bedeutet das?</h2>
+              <p>Kurze Erklärungen in einfacher Sprache, passend zu deiner aktuellen Funktion.</p>
+            </div>
+          </div>
+          <div class="info-list" id="explainArea"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-inner">
+          <div class="panel-title">
+            <div>
+              <h2>Werte und Merkmale</h2>
+              <p>Wertetabelle, Nullstellen, Scheitelpunkt und weitere Daten auf einen Blick.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table aria-label="Wertetabelle">
+              <thead id="tableHead"></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+          <div class="formula-box" id="extraFacts"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-inner">
+          <div class="panel-title">
+            <div>
+              <h2>Entdeckeraufträge</h2>
+              <p>Kurze Aufgaben zum Vergleichen, Begründen und Rechnen ohne Taschenrechner.</p>
+            </div>
+          </div>
+          <div id="taskArea"></div>
+          <div class="foot">Hinweis: Eine <b>Hypotenuse</b> gibt es nur in einem rechtwinkligen Dreieck. Sonst sagt man besser: längste Seite.</div>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <div id="tooltip" class="tooltip hidden" role="tooltip" aria-hidden="true"></div>
+
+  <script>
+    const COLORS = {
+      blue: "#2f74dd",
+      cyan: "#0ea5a4",
+      violet: "#8b5cf6",
+      orange: "#f97316",
+      gold: "#f59e0b",
+      green: "#16a34a",
+      red: "#ef4444",
+      gray: "#94a3b8",
+      grid: "#e8eef9",
+      gridStrong: "#cbd7ef",
+      axis: "#52627f"
+    };
+
+    const VIEW = { w: 800, h: 520, xMin: -8, xMax: 8, yMin: -12, yMax: 12 };
+    const EPS = 1e-9;
+
+    const state = {
+      a: 1,
+      b: 0,
+      c: 0,
+      showNormal: true,
+      showAxis: true,
+      showTriangle: true,
+      showLabels: true,
+      compareMode: "none",
+      m: 1,
+      n: 0,
+      a2: 0.5,
+      b2: 0,
+      c2: -2,
+      activePreset: "normal"
+    };
+
+    const presets = [
+      { id:"normal", name:"Normalparabel", text:"Der Standardfall.", desc:"Startpunkt für fast alle Beobachtungen: f(x)=x².", a:1, b:0, c:0 },
+      { id:"arch", name:"Torbogen", text:"Symmetrischer Bogen.", desc:"Nach unten geöffnet. Gut für Scheitelpunkt und Nullstellen.", a:-0.25, b:0, c:4 },
+      { id:"fountain", name:"Springbrunnen", text:"Wasserstrahl mit Maximum rechts.", desc:"Hier siehst du Verschiebung und Öffnung gleichzeitig.", a:-0.5, b:2, c:3 },
+      { id:"bowl", name:"Schüssel", text:"Breite Parabel.", desc:"Ideal, um Stauchung und Streckung zu vergleichen.", a:0.25, b:1, c:-2 },
+      { id:"mental", name:"Kopfrechnen", text:"Nullstellen ohne Taschenrechner.", desc:"Hier kann man aus der Scheitelpunktform oft direkt lösen.", a:1, b:-6, c:5 },
+      { id:"steep", name:"Skater-Rampe", text:"Schmal und deutlich gestreckt.", desc:"Großer Betrag von a macht die Parabel schmaler.", a:1.8, b:-3.6, c:-1.2 }
+    ];
+
+    const graph = document.getElementById("graph");
+    const tooltip = document.getElementById("tooltip");
+
+    const ui = {
+      generalFormula: document.getElementById("generalFormula"),
+      vertexFormula: document.getElementById("vertexFormula"),
+      graphInfo: document.getElementById("graphInfo"),
+      legend: document.getElementById("legend"),
+      presetGrid: document.getElementById("presetGrid"),
+      presetDesc: document.getElementById("presetDesc"),
+      explainArea: document.getElementById("explainArea"),
+      tableHead: document.getElementById("tableHead"),
+      tableBody: document.getElementById("tableBody"),
+      extraFacts: document.getElementById("extraFacts"),
+      taskArea: document.getElementById("taskArea"),
+      compareMode: document.getElementById("compareMode"),
+      comparePreset: document.getElementById("comparePreset"),
+      lineControls: document.getElementById("lineControls"),
+      paraControls: document.getElementById("paraControls"),
+      showNormal: document.getElementById("showNormal"),
+      showAxis: document.getElementById("showAxis"),
+      showTriangle: document.getElementById("showTriangle"),
+      showLabels: document.getElementById("showLabels"),
+      resetBtn: document.getElementById("resetBtn"),
+      mentalBtn: document.getElementById("mentalBtn"),
+      randomBtn: document.getElementById("randomBtn")
+    };
+
+    const controls = {
+      a: pair("aRange","aNumber"),
+      b: pair("bRange","bNumber"),
+      c: pair("cRange","cNumber"),
+      d: pair("dRange","dNumber"),
+      e: pair("eRange","eNumber"),
+      m: pair("mRange","mNumber"),
+      n: pair("nRange","nNumber"),
+      a2: pair("a2Range","a2Number"),
+      b2: pair("b2Range","b2Number"),
+      c2: pair("c2Range","c2Number")
+    };
+
+    function pair(rangeId, numberId){
+      return {
+        range: document.getElementById(rangeId),
+        number: document.getElementById(numberId)
+      };
+    }
+
+    function fmt(n, digits = 2){
+      if (!isFinite(n)) return "–";
+      if (Math.abs(n) < 1e-10) n = 0;
+      let s = Number(n).toFixed(digits);
+      s = s.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+      return s.replace("-", "−");
+    }
+
+    function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+    function clampA(a){
+      a = clamp(a, -3, 3);
+      if (Math.abs(a) < 0.1) a = a < 0 ? -0.1 : 0.1;
+      return a;
+    }
+
+    function signString(n){ return n < 0 ? "−" : "+"; }
+    function abs(n){ return Math.abs(n); }
+
+    function f(x){ return state.a*x*x + state.b*x + state.c; }
+    function gLine(x){ return state.m*x + state.n; }
+    function gParabola(x){ return state.a2*x*x + state.b2*x + state.c2; }
+
+    function vertexFromABC(a,b,c){
+      const d = -b/(2*a);
+      const e = a*d*d + b*d + c;
+      return { d, e };
+    }
+
+    function setABC(a,b,c){
+      state.a = clampA(Number(a));
+      state.b = clamp(Number(b), -10, 10);
+      state.c = clamp(Number(c), -10, 10);
+    }
+
+    function setFromVertex(a,d,e){
+      a = clampA(Number(a));
+      d = clamp(Number(d), -6, 6);
+      e = clamp(Number(e), -9, 9);
+      state.a = a;
+      state.b = -2*a*d;
+      state.c = a*d*d + e;
+    }
+
+    function discriminant(a,b,c){
+      return b*b - 4*a*c;
+    }
+
+    function getRoots(a,b,c){
+      const D = discriminant(a,b,c);
+      if (D < -1e-8) return [];
+      if (Math.abs(D) <= 1e-8) return [-b/(2*a)];
+      const s = Math.sqrt(Math.max(0,D));
+      return [(-b - s)/(2*a), (-b + s)/(2*a)].sort((x,y)=>x-y);
+    }
+
+    function toSX(x){ return (x - VIEW.xMin)/(VIEW.xMax - VIEW.xMin) * VIEW.w; }
+    function toSY(y){ return VIEW.h - (y - VIEW.yMin)/(VIEW.yMax - VIEW.yMin) * VIEW.h; }
+
+    function clientToWorld(evt){
+      const rect = graph.getBoundingClientRect();
+      const sx = (evt.clientX - rect.left) / rect.width * VIEW.w;
+      const sy = (evt.clientY - rect.top) / rect.height * VIEW.h;
+      const x = VIEW.xMin + sx / VIEW.w * (VIEW.xMax - VIEW.xMin);
+      const y = VIEW.yMax - sy / VIEW.h * (VIEW.yMax - VIEW.yMin);
+      return { x, y };
+    }
+
+    function pathFor(fn){
+      const steps = 560;
+      let d = "";
+      for(let i=0;i<=steps;i++){
+        const x = VIEW.xMin + i/steps * (VIEW.xMax - VIEW.xMin);
+        const y = fn(x);
+        const sx = toSX(x);
+        const sy = toSY(y);
+        d += (i === 0 ? "M" : " L") + " " + sx.toFixed(2) + " " + sy.toFixed(2);
+      }
+      return d;
+    }
+
+    function formatGeneral(a,b,c){
+      const parts = [];
+      const aAbs = abs(a), bAbs = abs(b), cAbs = abs(c);
+
+      let first = a < 0 ? "−" : "";
+      first += (Math.abs(aAbs - 1) < 1e-8 ? "" : fmt(aAbs)) + "x²";
+      parts.push(first);
+
+      if (bAbs > EPS) parts.push(`${signString(b)} ${Math.abs(bAbs - 1) < 1e-8 ? "" : fmt(bAbs)}x`);
+      if (cAbs > EPS) parts.push(`${signString(c)} ${fmt(cAbs)}`);
+
+      return "f(x) = " + parts.join(" ");
+    }
+
+    function formatVertex(a,d,e){
+      const lead = `${a < 0 ? "−" : ""}${Math.abs(abs(a)-1) < 1e-8 ? "" : fmt(abs(a))}`;
+      const inside = Math.abs(d) < 1e-8 ? "x" : d > 0 ? `x − ${fmt(d)}` : `x + ${fmt(abs(d))}`;
+      const end = Math.abs(e) < 1e-8 ? "" : ` ${signString(e)} ${fmt(abs(e))}`;
+      return `f(x) = ${lead}(${inside})²${end}`;
+    }
+
+    function formatFactor(a, roots){
+      if (roots.length === 0) return "Keine reellen Nullstellen";
+      if (roots.length === 1){
+        const r = roots[0];
+        const t = r >= 0 ? `(x − ${fmt(r)})²` : `(x + ${fmt(abs(r))})²`;
+        const lead = Math.abs(a - 1) < 1e-8 ? "" : Math.abs(a + 1) < 1e-8 ? "−" : fmt(a);
+        return `f(x) = ${lead}${t}`;
+      }
+      const [r1,r2] = roots;
+      const t1 = r1 >= 0 ? `(x − ${fmt(r1)})` : `(x + ${fmt(abs(r1))})`;
+      const t2 = r2 >= 0 ? `(x − ${fmt(r2)})` : `(x + ${fmt(abs(r2))})`;
+      const lead = Math.abs(a - 1) < 1e-8 ? "" : Math.abs(a + 1) < 1e-8 ? "−" : fmt(a);
+      return `f(x) = ${lead}${t1}${t2}`;
+    }
+
+    function distance(p,q){
+      return Math.hypot(p.x-q.x, p.y-q.y);
+    }
+
+    function getTriangleData(roots, c){
+      if (roots.length < 2) return null;
+      const [x1,x2] = roots;
+      const P1 = { x:x1, y:0 };
+      const P2 = { x:x2, y:0 };
+      const P3 = { x:0, y:c };
+      const s1 = distance(P1,P2);
+      const s2 = distance(P1,P3);
+      const s3 = distance(P2,P3);
+      const sides = [s1,s2,s3].sort((a,b)=>b-a);
+      const right = Math.abs(sides[0]*sides[0] - (sides[1]*sides[1] + sides[2]*sides[2])) < 0.02;
+      return { P1, P2, P3, base:s1, sideLeft:s2, sideRight:s3, longest:sides[0], right };
+    }
+
+    function solveLineIntersections(){
+      const aa = state.a;
+      const bb = state.b - state.m;
+      const cc = state.c - state.n;
+      if (Math.abs(aa) < EPS){
+        if (Math.abs(bb) < EPS) return [];
+        const x = -cc / bb;
+        return [{ x, y:gLine(x) }];
+      }
+      return getRoots(aa,bb,cc).map(x => ({ x, y:gLine(x) }));
+    }
+
+    function solveParabolaIntersections(){
+      const aa = state.a - state.a2;
+      const bb = state.b - state.b2;
+      const cc = state.c - state.c2;
+      if (Math.abs(aa) < EPS && Math.abs(bb) < EPS && Math.abs(cc) < EPS){
+        return { infinite:true, points:[] };
+      }
+      if (Math.abs(aa) < EPS){
+        if (Math.abs(bb) < EPS) return { infinite:false, points:[] };
+        const x = -cc / bb;
+        return { infinite:false, points:[{ x, y:gParabola(x) }] };
+      }
+      return { infinite:false, points:getRoots(aa,bb,cc).map(x => ({ x, y:gParabola(x) })) };
+    }
+
+    function syncControl(pairObj, value){
+      pairObj.range.value = value;
+      pairObj.number.value = value;
+    }
+
+    function buildPresetButtons(){
+      ui.presetGrid.innerHTML = presets.map(p => `
+        <button class="preset-btn ${state.activePreset === p.id ? "active" : ""}" data-preset="${p.id}" type="button">
+          <strong>${p.name}</strong>
+          <span>${p.text}</span>
+        </button>
+      `).join("");
+
+      ui.presetGrid.querySelectorAll("[data-preset]").forEach(btn => {
+        btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
+      });
+    }
+
+    function applyPreset(id){
+      const p = presets.find(x => x.id === id);
+      if (!p) return;
+      state.activePreset = id;
+      setABC(p.a, p.b, p.c);
+      ui.presetDesc.textContent = p.desc;
+      buildPresetButtons();
+      render();
+    }
+
+    function applyRandomCase(){
+      const aList = [-2,-1,-0.5,0.5,1,2];
+      const dList = [-4,-3,-2,-1,0,1,2,3,4];
+      const eList = [-5,-4,-3,-2,-1,0,1,2,3,4];
+      const a = aList[Math.floor(Math.random()*aList.length)];
+      const d = dList[Math.floor(Math.random()*dList.length)];
+      const e = eList[Math.floor(Math.random()*eList.length)];
+      state.activePreset = "random";
+      setFromVertex(a,d,e);
+      ui.presetDesc.textContent = "Zufallsfall: Ein neuer Übungsgraph mit gut lesbaren Werten.";
+      buildPresetButtons();
+      render();
+    }
+
+    function applyComparePreset(){
+      const key = ui.comparePreset.value;
+      if (key === "line1"){
+        state.compareMode = "line";
+        state.m = 1;
+        state.n = 0;
+      } else if (key === "line2"){
+        state.compareMode = "line";
+        state.m = -1;
+        state.n = 2;
+      } else if (key === "para1"){
+        state.compareMode = "parabola";
+        state.a2 = 0.5;
+        state.b2 = 0;
+        state.c2 = -2;
+      } else if (key === "para2"){
+        state.compareMode = "parabola";
+        state.a2 = -0.5;
+        state.b2 = 1;
+        state.c2 = 4;
+      }
+      render();
+    }
+
+    function pointMarkup(x, y, color, label, tip, handleKind = ""){
+      const sx = toSX(x);
+      const sy = toSY(y);
+      const handleAttrs = handleKind ? `data-handle="${handleKind}" tabindex="0" role="button" aria-label="${label}"` : "";
+      const text = state.showLabels ? `<text x="${sx + 12}" y="${sy - 12}" font-size="15" fill="${color}" font-weight="700">${label}</text>` : "";
+      return `
+        <g data-tip="${escapeHtml(tip)}" ${handleAttrs}>
+          <circle cx="${sx}" cy="${sy}" r="18" fill="transparent"></circle>
+          <circle cx="${sx}" cy="${sy}" r="7.5" fill="${color}" stroke="#fff" stroke-width="3"></circle>
+          ${text}
+        </g>
+      `;
+    }
+
+    function smallPoint(x, y, color, label, tip){
+      const sx = toSX(x);
+      const sy = toSY(y);
+      const text = state.showLabels ? `<text x="${sx + 10}" y="${sy - 10}" font-size="14" fill="${color}" font-weight="700">${label}</text>` : "";
+      return `
+        <g data-tip="${escapeHtml(tip)}">
+          <circle cx="${sx}" cy="${sy}" r="6" fill="${color}" stroke="#fff" stroke-width="2"></circle>
+          ${text}
+        </g>
+      `;
+    }
+
+    function escapeHtml(str){
+      return String(str)
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;");
+    }
+
+    function renderGraph(){
+      const v = vertexFromABC(state.a, state.b, state.c);
+      const roots = getRoots(state.a, state.b, state.c);
+      const triangle = getTriangleData(roots, state.c);
+      const lineIntersections = solveLineIntersections();
+      const paraIntersections = solveParabolaIntersections();
+
+      let grid = "";
+      for(let x = Math.ceil(VIEW.xMin); x <= Math.floor(VIEW.xMax); x++){
+        const sx = toSX(x);
+        const strong = x % 2 === 0;
+        grid += `<line x1="${sx}" y1="0" x2="${sx}" y2="${VIEW.h}" stroke="${strong ? COLORS.gridStrong : COLORS.grid}" stroke-width="${strong ? 1.2 : 1}"></line>`;
+        if (x !== 0 && strong){
+          grid += `<text x="${sx + 4}" y="${toSY(0) - 8}" font-size="13" fill="#70809e">${x}</text>`;
+        }
+      }
+      for(let y = Math.ceil(VIEW.yMin); y <= Math.floor(VIEW.yMax); y++){
+        const sy = toSY(y);
+        const strong = y % 2 === 0;
+        grid += `<line x1="0" y1="${sy}" x2="${VIEW.w}" y2="${sy}" stroke="${strong ? COLORS.gridStrong : COLORS.grid}" stroke-width="${strong ? 1.2 : 1}"></line>`;
+        if (y !== 0 && strong){
+          grid += `<text x="${toSX(0) + 8}" y="${sy - 6}" font-size="13" fill="#70809e">${y}</text>`;
+        }
+      }
+
+      const axisX = `
+        <line x1="0" y1="${toSY(0)}" x2="${VIEW.w}" y2="${toSY(0)}" stroke="${COLORS.axis}" stroke-width="2.4"></line>
+        <line x1="${toSX(0)}" y1="0" x2="${toSX(0)}" y2="${VIEW.h}" stroke="${COLORS.axis}" stroke-width="2.4"></line>
+        <text x="${VIEW.w - 18}" y="${toSY(0) - 10}" font-size="14" fill="${COLORS.axis}" font-weight="700">x</text>
+        <text x="${toSX(0) + 10}" y="20" font-size="14" fill="${COLORS.axis}" font-weight="700">y</text>
+      `;
+
+      let shapes = "";
+
+      if (state.showNormal){
+        shapes += `<path d="${pathFor(x => x*x)}" fill="none" stroke="${COLORS.gray}" stroke-width="3" stroke-dasharray="10 8" data-tip="Normalparabel: f(x)=x². Sie ist dein Vergleichsmaßstab."></path>`;
+      }
+
+      if (state.showAxis){
+        shapes += `<line x1="${toSX(v.d)}" y1="0" x2="${toSX(v.d)}" y2="${VIEW.h}" stroke="${COLORS.cyan}" stroke-width="2.2" stroke-dasharray="8 8" data-tip="Symmetrieachse: links und rechts davon ist die Parabel gespiegelt."></line>`;
+      }
+
+      if (state.showTriangle && triangle){
+        shapes += `
+          <polygon
+            points="${toSX(triangle.P1.x)},${toSY(triangle.P1.y)} ${toSX(triangle.P2.x)},${toSY(triangle.P2.y)} ${toSX(triangle.P3.x)},${toSY(triangle.P3.y)}"
+            fill="rgba(245,158,11,.14)"
+            stroke="rgba(245,158,11,.78)"
+            stroke-width="2"
+            data-tip="Dreieck aus den beiden Nullstellen und dem y-Achsenabschnitt."
+          ></polygon>
+        `;
+      }
+
+      if (state.compareMode === "line"){
+        shapes += `<path d="${pathFor(gLine)}" fill="none" stroke="${COLORS.orange}" stroke-width="3" stroke-dasharray="7 7" data-tip="Gerade zum Vergleichen: y = mx + n"></path>`;
+      }
+
+      if (state.compareMode === "parabola"){
+        shapes += `<path d="${pathFor(gParabola)}" fill="none" stroke="${COLORS.orange}" stroke-width="3" stroke-dasharray="7 7" data-tip="Zweite quadratische Funktion zum direkten Vergleich."></path>`;
+      }
+
+      shapes += `<path d="${pathFor(f)}" fill="none" stroke="${COLORS.blue}" stroke-width="5" data-tip="Deine aktuelle quadratische Funktion."></path>`;
+
+      const ax = clamp(v.d + 1, VIEW.xMin + 0.5, VIEW.xMax - 0.5);
+      const ay = clamp(v.e + state.a, VIEW.yMin + 0.5, VIEW.yMax - 0.5);
+
+      shapes += pointMarkup(v.d, v.e, COLORS.cyan, "S", `Scheitelpunkt S(${fmt(v.d)} | ${fmt(v.e)}). Ziehe diesen Punkt, um die Parabel zu verschieben.`, "vertex");
+      shapes += pointMarkup(ax, ay, COLORS.gold, "A", `A-Punkt: Gehst du vom Scheitelpunkt 1 nach rechts, ändert sich der y-Wert um a. Ziehe diesen Punkt hoch oder runter, um a zu ändern.`, "a-handle");
+      shapes += pointMarkup(0, state.c, COLORS.violet, "C", `y-Achsenabschnitt C(0 | ${fmt(state.c)}). Ziehe diesen Punkt auf der y-Achse.`, "c-handle");
+
+      roots.forEach((xVal, idx) => {
+        shapes += smallPoint(xVal, 0, COLORS.green, `N${idx+1}`, `Nullstelle N${idx+1}(${fmt(xVal)} | 0)`);
+      });
+
+      if (state.compareMode === "line"){
+        lineIntersections.forEach((p, idx) => {
+          shapes += smallPoint(p.x, p.y, COLORS.red, `Q${idx+1}`, `Schnittpunkt Q${idx+1}(${fmt(p.x)} | ${fmt(p.y)}) mit der Geraden`);
+        });
+      }
+
+      if (state.compareMode === "parabola" && !paraIntersections.infinite){
+        paraIntersections.points.forEach((p, idx) => {
+          shapes += smallPoint(p.x, p.y, COLORS.red, `Q${idx+1}`, `Schnittpunkt Q${idx+1}(${fmt(p.x)} | ${fmt(p.y)}) mit der zweiten Parabel`);
+        });
+      }
+
+      graph.innerHTML = `
+        <rect x="0" y="0" width="${VIEW.w}" height="${VIEW.h}" fill="transparent"></rect>
+        <g>${grid}</g>
+        <g>${axisX}</g>
+        <g>${shapes}</g>
+      `;
+    }
+
+    function renderLegend(){
+      const items = [
+        { color:COLORS.blue, text:"Aktuelle Parabel" }
+      ];
+      if (state.showNormal) items.push({ color:COLORS.gray, text:"Normalparabel" });
+      if (state.showAxis) items.push({ color:COLORS.cyan, text:"Symmetrieachse / Scheitelpunkt" });
+      if (state.showTriangle) items.push({ color:COLORS.gold, text:"Dreieck aus drei markanten Punkten" });
+      if (state.compareMode !== "none") items.push({ color:COLORS.orange, text:"Vergleichsobjekt" });
+      ui.legend.innerHTML = items.map(item => `
+        <div class="legend-item"><span class="dot" style="background:${item.color}"></span>${item.text}</div>
+      `).join("");
+    }
+
+    function renderInfo(){
+      const { d, e } = vertexFromABC(state.a, state.b, state.c);
+      const roots = getRoots(state.a, state.b, state.c);
+      const open = state.a > 0 ? "nach oben" : "nach unten";
+      const widthText = abs(state.a) > 1 ? "schmaler als die Normalparabel" : abs(state.a) < 1 ? "breiter als die Normalparabel" : "genauso breit wie die Normalparabel";
+
+      let rootText = "";
+      if (roots.length === 0) rootText = "Deine Parabel schneidet die x-Achse nicht.";
+      else if (roots.length === 1) rootText = `Sie berührt die x-Achse bei x = ${fmt(roots[0])}.`;
+      else rootText = `Sie schneidet die x-Achse bei x = ${fmt(roots[0])} und x = ${fmt(roots[1])}.`;
+
+      ui.explainArea.innerHTML = `
+        <div class="info-item">
+          <h4>Was macht a?</h4>
+          <p>Dein Wert ist a = ${fmt(state.a)}. Die Parabel ist also ${open} geöffnet und ${widthText}.</p>
+        </div>
+        <div class="info-item">
+          <h4>Was macht b?</h4>
+          <p>b = ${fmt(state.b)} beeinflusst die Lage der Symmetrieachse. Allein an b sieht man die Verschiebung aber oft schlechter als in der Scheitelpunktform.</p>
+        </div>
+        <div class="info-item">
+          <h4>Was macht c?</h4>
+          <p>c = ${fmt(state.c)} ist der y-Achsenabschnitt. Das heißt: Bei x = 0 hat die Funktion genau den Wert ${fmt(state.c)}.</p>
+        </div>
+        <div class="info-item">
+          <h4>Scheitelpunktform verstehen</h4>
+          <p>Gerade siehst du S(${fmt(d)} | ${fmt(e)}). In a(x − d)² + e bedeutet d = ${fmt(d)} eine Verschiebung ${d >= 0 ? "nach rechts" : "nach links"} und e = ${fmt(e)} eine Verschiebung ${e >= 0 ? "nach oben" : "nach unten"}.</p>
+        </div>
+        <div class="info-item">
+          <h4>Nullstellen</h4>
+          <p>${rootText}</p>
+        </div>
+      `;
+    }
+
+    function renderTable(){
+      const v = vertexFromABC(state.a, state.b, state.c);
+      const center = Math.round(v.d);
+      const xs = [];
+      for(let i=-3;i<=3;i++) xs.push(center + i);
+
+      let headers = `<tr><th>x</th><th>f(x)</th>`;
+      if (state.compareMode === "line") headers += `<th>g(x) = mx + n</th>`;
+      if (state.compareMode === "parabola") headers += `<th>h(x)</th>`;
+      headers += `</tr>`;
+      ui.tableHead.innerHTML = headers;
+
+      ui.tableBody.innerHTML = xs.map(x => {
+        let cells = `<td>${fmt(x,0)}</td><td>${fmt(f(x))}</td>`;
+        if (state.compareMode === "line") cells += `<td>${fmt(gLine(x))}</td>`;
+        if (state.compareMode === "parabola") cells += `<td>${fmt(gParabola(x))}</td>`;
+        return `<tr>${cells}</tr>`;
+      }).join("");
+    }
+
+    function renderFacts(){
+      const v = vertexFromABC(state.a, state.b, state.c);
+      const D = discriminant(state.a, state.b, state.c);
+      const roots = getRoots(state.a, state.b, state.c);
+      const triangle = getTriangleData(roots, state.c);
+      let compareText = "";
+
+      if (state.compareMode === "line"){
+        const pts = solveLineIntersections();
+        compareText = pts.length
+          ? `Schnittpunkte mit der Geraden: ${pts.map((p,i)=>`Q${i+1}(${fmt(p.x)}|${fmt(p.y)})`).join(", ")}`
+          : "Keine reellen Schnittpunkte mit der Geraden.";
+      } else if (state.compareMode === "parabola"){
+        const res = solveParabolaIntersections();
+        if (res.infinite) compareText = "Die beiden Parabeln sind identisch.";
+        else compareText = res.points.length
+          ? `Schnittpunkte mit der zweiten Parabel: ${res.points.map((p,i)=>`Q${i+1}(${fmt(p.x)}|${fmt(p.y)})`).join(", ")}`
+          : "Keine reellen Schnittpunkte mit der zweiten Parabel.";
+      } else {
+        compareText = "Kein Vergleichsobjekt aktiv.";
+      }
+
+      let triangleText = "Für das Dreieck aus Nullstellen und y-Achsenabschnitt fehlen noch zwei Nullstellen.";
+      if (triangle){
+        triangleText = `Dreieck: Basis = ${fmt(triangle.base)}, Seite links = ${fmt(triangle.sideLeft)}, Seite rechts = ${fmt(triangle.sideRight)}. ${triangle.right ? "Dieses Dreieck ist rechtwinklig, also gibt es hier wirklich eine Hypotenuse." : "Dieses Dreieck ist nicht rechtwinklig, also gibt es keine Hypotenuse."}`;
+      }
+
+      ui.extraFacts.innerHTML = `
+Allgemeine Form: ${formatGeneral(state.a,state.b,state.c)}
+<br>Scheitelpunktform: ${formatVertex(state.a,v.d,v.e)}
+<br>Faktorform: ${formatFactor(state.a, roots)}
+<br>Scheitelpunkt: S(${fmt(v.d)} | ${fmt(v.e)})
+<br>Diskriminante: D = ${fmt(D)}
+<br>${compareText}
+<br>${triangleText}
+      `;
+    }
+
+    function renderTasks(){
+      ui.taskArea.innerHTML = `
+        <details open>
+          <summary>1. Verschiebung verstehen</summary>
+          <div class="task-body">
+            Setze zuerst die Normalparabel. Ziehe dann den Scheitelpunkt auf S(3|2). Prüfe danach in der Scheitelpunktform, warum in der Klammer <b>(x − 3)</b> steht und nicht <b>(x + 3)</b>.
+            <div class="mini-buttons">
+              <button class="btn" type="button" data-action="normal">Normalparabel setzen</button>
+            </div>
+          </div>
+        </details>
+
+        <details>
+          <summary>2. Streckung und Stauchung</summary>
+          <div class="task-body">
+            Finde drei Parabeln mit demselben Scheitelpunkt, aber verschiedenem a. Vergleiche: Wann ist die Parabel schmaler, wann breiter? Was passiert bei negativem a?
+          </div>
+        </details>
+
+        <details>
+          <summary>3. Nullstellen ohne Taschenrechner</summary>
+          <div class="task-body">
+            Wechsle zum Kopfrechen-Fall. Lies die Scheitelpunktform ab und löse <b>f(x)=0</b> möglichst direkt. Tipp: Erst den Klammerteil alleinstellen, dann die Wurzel ziehen.
+            <div class="mini-buttons">
+              <button class="btn" type="button" data-action="mental">Kopfrechen-Fall laden</button>
+            </div>
+          </div>
+        </details>
+
+        <details>
+          <summary>4. Dreieck aus drei Punkten</summary>
+          <div class="task-body">
+            Blende das Dreieck ein. Vergleiche seine Seitenlängen. Ist es rechtwinklig? Nur dann darfst du die längste Seite <b>Hypotenuse</b> nennen.
+          </div>
+        </details>
+
+        <details>
+          <summary>5. Schnittpunkte entdecken</summary>
+          <div class="task-body">
+            Blende eine Gerade oder zweite Parabel ein. Verändere die Werte so, dass es 0, 1 oder 2 Schnittpunkte gibt. Erkläre, was das über die Gleichung bedeutet.
+          </div>
+        </details>
+
+        <details>
+          <summary>6. Eigener Übungsfall</summary>
+          <div class="task-body">
+            Erzeuge einen neuen Übungsfall und beschreibe ihn in allen drei Formen: allgemeine Form, Scheitelpunktform und mit Worten.
+            <div class="mini-buttons">
+              <button class="btn" type="button" data-action="random">Neuer Übungsfall</button>
+            </div>
+          </div>
+        </details>
+      `;
+    }
+
+    function renderGraphInfo(){
+      const v = vertexFromABC(state.a, state.b, state.c);
+      const roots = getRoots(state.a, state.b, state.c);
+      const open = state.a > 0 ? "nach oben" : "nach unten";
+      const widthText = abs(state.a) > 1 ? "gestreckt" : abs(state.a) < 1 ? "gestaucht" : "weder gestreckt noch gestaucht";
+      let msg = `Deine Parabel ist ${open} geöffnet und ${widthText}. `;
+      msg += `Der Scheitelpunkt liegt bei S(${fmt(v.d)} | ${fmt(v.e)}). `;
+      msg += v.d >= 0
+        ? `Achte auf die Klammer: Obwohl der Scheitelpunkt rechts bei x = ${fmt(v.d)} liegt, steht in der Scheitelpunktform x − ${fmt(v.d)}. `
+        : `Achte auf die Klammer: Obwohl der Scheitelpunkt links bei x = ${fmt(v.d)} liegt, steht in der Scheitelpunktform x + ${fmt(abs(v.d))}. `;
+      if (roots.length === 0) msg += `Sie hat keine reellen Nullstellen.`;
+      else if (roots.length === 1) msg += `Sie berührt die x-Achse in genau einem Punkt.`;
+      else msg += `Sie schneidet die x-Achse in zwei Punkten.`;
+      ui.graphInfo.innerHTML = msg;
+    }
+
+    function updateCompareVisibility(){
+      ui.compareMode.value = state.compareMode;
+      ui.lineControls.classList.toggle("hidden", state.compareMode !== "line");
+      ui.paraControls.classList.toggle("hidden", state.compareMode !== "parabola");
+    }
+
+    function syncAllInputs(){
+      syncControl(controls.a, state.a);
+      syncControl(controls.b, state.b);
+      syncControl(controls.c, state.c);
+
+      const v = vertexFromABC(state.a, state.b, state.c);
+      syncControl(controls.d, Number(v.d.toFixed(2)));
+      syncControl(controls.e, Number(v.e.toFixed(2)));
+
+      syncControl(controls.m, state.m);
+      syncControl(controls.n, state.n);
+      syncControl(controls.a2, state.a2);
+      syncControl(controls.b2, state.b2);
+      syncControl(controls.c2, state.c2);
+
+      ui.showNormal.checked = state.showNormal;
+      ui.showAxis.checked = state.showAxis;
+      ui.showTriangle.checked = state.showTriangle;
+      ui.showLabels.checked = state.showLabels;
+    }
+
+    function render(){
+      syncAllInputs();
+      updateCompareVisibility();
+      ui.generalFormula.textContent = formatGeneral(state.a, state.b, state.c);
+      const v = vertexFromABC(state.a, state.b, state.c);
+      ui.vertexFormula.textContent = formatVertex(state.a, v.d, v.e);
+      renderGraph();
+      renderLegend();
+      renderInfo();
+      renderTable();
+      renderFacts();
+      renderTasks();
+      renderGraphInfo();
+    }
+
+    function bindPair(pairObj, getter, setter){
+      const apply = value => {
+        setter(Number(value));
+        render();
+      };
+      pairObj.range.addEventListener("input", e => apply(e.target.value));
+      pairObj.number.addEventListener("input", e => apply(e.target.value));
+    }
+
+    function setupControls(){
+      bindPair(controls.a, () => state.a, value => setABC(value, state.b, state.c));
+      bindPair(controls.b, () => state.b, value => setABC(state.a, value, state.c));
+      bindPair(controls.c, () => state.c, value => setABC(state.a, state.b, value));
+
+      bindPair(controls.d, () => vertexFromABC(state.a,state.b,state.c).d, value => {
+        const v = vertexFromABC(state.a,state.b,state.c);
+        setFromVertex(state.a, value, v.e);
+      });
+
+      bindPair(controls.e, () => vertexFromABC(state.a,state.b,state.c).e, value => {
+        const v = vertexFromABC(state.a,state.b,state.c);
+        setFromVertex(state.a, v.d, value);
+      });
+
+      bindPair(controls.m, () => state.m, value => { state.m = clamp(Number(value), -4, 4); });
+      bindPair(controls.n, () => state.n, value => { state.n = clamp(Number(value), -10, 10); });
+      bindPair(controls.a2, () => state.a2, value => { state.a2 = clampA(Number(value)); });
+      bindPair(controls.b2, () => state.b2, value => { state.b2 = clamp(Number(value), -10, 10); });
+      bindPair(controls.c2, () => state.c2, value => { state.c2 = clamp(Number(value), -10, 10); });
+
+      ui.showNormal.addEventListener("change", e => { state.showNormal = e.target.checked; render(); });
+      ui.showAxis.addEventListener("change", e => { state.showAxis = e.target.checked; render(); });
+      ui.showTriangle.addEventListener("change", e => { state.showTriangle = e.target.checked; render(); });
+      ui.showLabels.addEventListener("change", e => { state.showLabels = e.target.checked; render(); });
+
+      ui.compareMode.addEventListener("change", e => { state.compareMode = e.target.value; render(); });
+      ui.comparePreset.addEventListener("change", applyComparePreset);
+
+      ui.resetBtn.addEventListener("click", () => applyPreset("normal"));
+      ui.mentalBtn.addEventListener("click", () => applyPreset("mental"));
+      ui.randomBtn.addEventListener("click", applyRandomCase);
+
+      ui.taskArea.addEventListener("click", e => {
+        const action = e.target.getAttribute("data-action");
+        if (!action) return;
+        if (action === "normal") applyPreset("normal");
+        if (action === "mental") applyPreset("mental");
+        if (action === "random") applyRandomCase();
+      });
+
+      buildPresetButtons();
+    }
+
+    let drag = null;
+
+    function attachGraphInteractions(){
+      graph.addEventListener("pointerdown", evt => {
+        const handle = evt.target.closest("[data-handle]");
+        if (!handle) return;
+        evt.preventDefault();
+        drag = { kind: handle.dataset.handle };
+        if (graph.setPointerCapture) graph.setPointerCapture(evt.pointerId);
+      });
+
+      window.addEventListener("pointermove", evt => {
+        if (!drag) return;
+        const p = clientToWorld(evt);
+        const v = vertexFromABC(state.a, state.b, state.c);
+
+        if (drag.kind === "vertex"){
+          setFromVertex(state.a, clamp(p.x, -6, 6), clamp(p.y, -9, 9));
+        } else if (drag.kind === "a-handle"){
+          const newA = clampA(p.y - v.e);
+          setFromVertex(newA, v.d, v.e);
+        } else if (drag.kind === "c-handle"){
+          setABC(state.a, state.b, clamp(p.y, -10, 10));
+        }
+
+        render();
+      });
+
+      function stopDrag(){ drag = null; }
+      window.addEventListener("pointerup", stopDrag);
+      window.addEventListener("pointercancel", stopDrag);
+
+      graph.addEventListener("keydown", evt => {
+        const handle = evt.target.closest("[data-handle]");
+        if (!handle) return;
+
+        const kind = handle.dataset.handle;
+        const step = evt.shiftKey ? 1 : 0.2;
+        const v = vertexFromABC(state.a, state.b, state.c);
+        let used = true;
+
+        if (kind === "vertex"){
+          let d = v.d;
+          let e = v.e;
+          if (evt.key === "ArrowLeft") d -= step;
+          else if (evt.key === "ArrowRight") d += step;
+          else if (evt.key === "ArrowUp") e += step;
+          else if (evt.key === "ArrowDown") e -= step;
+          else used = false;
+          if (used) setFromVertex(state.a, d, e);
+        } else if (kind === "a-handle"){
+          let a = state.a;
+          if (evt.key === "ArrowUp" || evt.key === "ArrowRight") a += step * 0.5;
+          else if (evt.key === "ArrowDown" || evt.key === "ArrowLeft") a -= step * 0.5;
+          else used = false;
+          if (used) setFromVertex(a, v.d, v.e);
+        } else if (kind === "c-handle"){
+          let c = state.c;
+          if (evt.key === "ArrowUp") c += step;
+          else if (evt.key === "ArrowDown") c -= step;
+          else used = false;
+          if (used) setABC(state.a, state.b, c);
+        } else {
+          used = false;
+        }
+
+        if (used){
+          evt.preventDefault();
+          render();
+        }
+      });
+
+      graph.addEventListener("mousemove", evt => {
+        const tipTarget = evt.target.closest("[data-tip]");
+        if (!tipTarget){
+          tooltip.classList.add("hidden");
+          tooltip.setAttribute("aria-hidden","true");
+          return;
+        }
+        tooltip.innerHTML = tipTarget.getAttribute("data-tip");
+        tooltip.style.left = evt.clientX + "px";
+        tooltip.style.top = evt.clientY + "px";
+        tooltip.classList.remove("hidden");
+        tooltip.setAttribute("aria-hidden","false");
+      });
+
+      graph.addEventListener("mouseleave", () => {
+        tooltip.classList.add("hidden");
+        tooltip.setAttribute("aria-hidden","true");
+      });
+    }
+
+    setupControls();
+    attachGraphInteractions();
+    applyPreset("normal");
+  </script>
+</body>
+</html>

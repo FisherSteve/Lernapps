@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Interaktive Lineare Funktionen – Single File</title>
+<style>
+:root{--bg:#f8fafc;--card:#eef2f7;--line:#2563eb;--line2:#dc2626;--ok:#16a34a;--text:#1f2937;--muted:#64748b;--border:#dbe3ee;--btn:#3b82f6;--btn2:#e5e7eb}
+body.dark { --bg:#0f172a; --card:#1e293b; --border:#334155; --text:#f8fafc; --muted:#94a3b8; --btn2:#334155; }
+*{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text); transition: background 0.2s, color 0.2s;}
+.page{max-width:1240px;margin:0 auto;padding:14px}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.title{font:italic 700 28px Georgia,serif}.title .plain{font-style:normal}
+.theme-toggle { background:transparent; border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:8px; cursor:pointer; font-size:16px; transition:0.2s;}
+.theme-toggle:hover { background:var(--border); }
+.context-select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit; font-size: 14px; cursor: pointer; }
+.bar,.card,.graphbox,.tablebox,.quizbox{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 2px 8px rgba(15,23,42,.04)}
+.bar{padding:12px 14px;margin-bottom:12px}.barrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.barrow+.barrow{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.label{font-weight:700}.chip{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;cursor:pointer;user-select:none}.chip input{margin:0}
+.layout{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}.leftcol{display:flex;flex-direction:column;gap:12px}
+.card{padding:14px}.card h3{margin:0 0 8px 0;font:700 19px Georgia,serif}.eq{font:italic 32px Georgia,serif;margin:2px 0 12px;color:#1d4ed8}.eq.red{color:#dc2626}.subtle{font-size:14px;color:var(--muted)}
+.control{display:grid;grid-template-columns:auto 1fr 64px 80px;gap:8px;align-items:center;margin:8px 0}.control label{font:italic 18px Georgia,serif; white-space:nowrap;}.control .val{text-align:center}
+input[type=range]{width:100%} input[type=number]{width:100%;padding:7px 8px;border:1px solid #cbd5e1;border-radius:8px;background:var(--bg);color:var(--text);font-size:14px}
+body.dark input[type=number], body.dark .chip, body.dark table, body.dark th, body.dark .badge { background:#0f172a; color:#f8fafc; border-color:#334155; }
+body.dark th, body.dark td { border-color:#334155; }
+body.dark .overlayinfo { background:rgba(30,41,59,.85); color:#f8fafc; border-color:#334155; }
+body.dark canvas { border-color:#334155; background:#1e293b !important; }
+.graphbox{padding:12px}.graphhead{font-weight:700;margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;}.canvaswrap{position:relative}.overlayinfo{position:absolute;right:10px;top:10px;background:rgba(255,255,255,.85);border:1px solid var(--border);padding:6px 8px;border-radius:8px;font-size:12px;color:#334155}
+canvas{display:block;width:100%;height:520px;background:#fff;border:1px solid var(--border);border-radius:12px}
+.tablebox{padding:12px;margin-top:14px}.tabletitle{font:700 18px Georgia,serif;margin-bottom:8px} table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden} th,td{padding:7px 8px;border-bottom:1px solid #e5e7eb;text-align:right} th{text-align:center;background:transparent}
+.quizbox{padding:14px;margin-top:18px}.quizgrid{display:grid;grid-template-columns:320px 1fr;gap:16px}.btn{padding:9px 14px;border:none;border-radius:9px;background:var(--btn);color:#fff;cursor:pointer;font-size:14px; transition:0.1s;}.btn:active{transform:scale(0.97);}.btn.gray{background:var(--btn2);color:var(--text)}.feedback{margin-top:10px;font-weight:700; line-height:1.4;}.good{color:var(--ok)}.bad{color:#dc2626}
+.row{display:flex;gap:8px;flex-wrap:wrap}.mini{font-size:13px;color:var(--text); line-height:1.4;} .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--border);font-size:12px}
+.hidden{display:none !important}
+.step-box { background:var(--bg); padding:10px; border-radius:8px; border:1px solid var(--border); margin: 12px 0; }
+@media (max-width:980px){.layout,.quizgrid{grid-template-columns:1fr}canvas{height:420px}}
+body.dark .bad.hidden { display:none!important; } body.dark #mainWarning, body.dark #interWarning { background:#7f1d1d!important; color:#f8fafc!important; border:1px solid #991b1b; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <div class="title">f(x) = mx + b <span class="plain">erkunden</span></div>
+    <div>
+      <select id="contextSelect" class="context-select">
+        <option value="none">Kontext: Mathe (Standard)</option>
+        <option value="taxi">Kontext: Taxifahrt (Kosten)</option>
+        <option value="kerze">Kontext: Kerze (Abbrennen)</option>
+        <option value="wasser">Kontext: Wassertank</option>
+      </select>
+      <button class="theme-toggle" id="themeToggle" title="Dark Mode umschalten">🌙</button>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="barrow">
+      <span class="label">Explorationsmodi:</span>
+      <label class="chip"><input type="checkbox" id="modePoint"> Punktberechnung</label>
+      <label class="chip"><input type="checkbox" id="modeIntersection"> ✂ Schnittpunkt</label>
+      <label class="chip"><input type="checkbox" id="modeSlope"> ↗ Steigungsdreieck</label>
+    </div>
+    <div class="barrow">
+      <span class="label">Quiz-Typen:</span>
+      <label class="chip"><input type="radio" name="quizType" value="none" checked> Kein Quiz</label>
+      <label class="chip"><input type="radio" name="quizType" value="point"> Punktprobe</label>
+      <label class="chip"><input type="radio" name="quizType" value="sd"> SD-Quiz</label>
+      <label class="chip"><input type="radio" name="quizType" value="line"> Gerade bestimmen</label>
+      <button class="btn gray hidden" id="endQuizBtn">Quiz beenden</button>
+    </div>
+  </div>
+
+  <div id="exploreArea">
+    <div class="layout">
+      <div class="leftcol">
+        <div class="card">
+          <div id="mainWarning" class="bad hidden" style="margin-bottom:8px;font-size:14px;background:#fee2e2;padding:6px;border-radius:6px;">⚠️ Bitte gültige Werte eingeben!</div>
+          <div class="eq" id="eqMain">f(x) = 1.0x + 0</div>
+          <div class="control" style="grid-template-columns:100px 1fr 40px 65px;"><label id="labelM">m</label><input type="range" id="mRange" min="-5" max="5" step="0.1" value="1"><div class="val" id="mVal">1</div><input type="number" id="mNum" step="0.1" value="1"></div>
+          <div class="control" style="grid-template-columns:100px 1fr 40px 65px;"><label id="labelB">b</label><input type="range" id="bRange" min="-5" max="5" step="0.1" value="0"><div class="val" id="bVal">0</div><input type="number" id="bNum" step="0.1" value="0"></div>
+          <div class="subtle" id="exploreDesc">Steigung und y-Achsenabschnitt sind beliebig wählbar (Pfeile in 0.1-Schritten).</div>
+        </div>
+
+        <div class="card hidden" id="slopeCard">
+          <h3>Einstellungen Steigungsdreieck</h3>
+          <div class="control" style="grid-template-columns:32px 1fr 40px 65px;"><label>x</label><input type="range" id="xStartRange" min="-8" max="8" step="1" value="1"><div class="val" id="xStartVal">1</div><input type="number" id="xStartNum" step="1" value="1"></div>
+          <div class="control" style="grid-template-columns:32px 1fr 40px 65px;"><label>Δx</label><input type="range" id="dxRange" min="1" max="8" step="1" value="2"><div class="val" id="dxVal">2</div><input type="number" id="dxNum" step="1" value="2"></div>
+          <div class="subtle">Es wird ein Steigungsdreieck mit Δx und Δy eingeblendet.</div>
+        </div>
+
+        <div class="card hidden" id="pointCard">
+          <h3>Punktberechnung</h3>
+          <div class="control" style="grid-template-columns:32px 1fr 100px"><label>x</label><div></div><input type="number" id="pointX" step="0.1" value="2"></div>
+          <div class="eq" style="font-size:24px;color:#16a34a" id="pointEq">P = (2.0 | 2.0)</div>
+          <div class="subtle">Der Punkt wird im Koordinatensystem markiert.</div>
+        </div>
+
+        <div class="card hidden" id="interCard">
+          <div id="interWarning" class="bad hidden" style="margin-bottom:8px;font-size:14px;background:#fee2e2;padding:6px;border-radius:6px;">⚠️ Bitte gültige Werte eingeben!</div>
+          <div class="eq red" id="eqSecond">g(x) = -1.0x + 0</div>
+          <div class="control" style="grid-template-columns:32px 1fr 40px 65px;"><label>m</label><input type="range" id="m2Range" min="-5" max="5" step="0.1" value="-1"><div class="val" id="m2Val">-1</div><input type="number" id="m2Num" step="0.1" value="-1"></div>
+          <div class="control" style="grid-template-columns:32px 1fr 40px 65px;"><label>b</label><input type="range" id="b2Range" min="-5" max="5" step="0.1" value="0"><div class="val" id="b2Val">0</div><input type="number" id="b2Num" step="0.1" value="0"></div>
+          <h3>Schnittpunktanalyse</h3>
+          <div id="intersectionText" style="font:italic 20px Georgia,serif; margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="graphbox">
+          <div class="graphhead">Koordinatensystem</div>
+          <div class="canvaswrap">
+            <canvas id="graph" width="760" height="520"></canvas>
+          </div>
+        </div>
+        <div class="tablebox">
+          <div class="tabletitle">Wertetabelle f(x)</div>
+          <table>
+            <thead><tr><th id="thX">x</th><th id="thY">f(x)</th></tr></thead>
+            <tbody id="valueBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="quizbox hidden" id="quizArea">
+    <div class="quizgrid">
+      <div>
+
+        <!-- Punktprobe Quiz -->
+        <div class="card hidden" id="quizCardPointTest">
+          <h3>Punktprobe-Quiz</h3>
+          <div class="subtle">Liegt der Punkt <b id="pointQuizP">P(x|y)</b> auf der abgebildeten Geraden <b id="pointQuizEq" style="color:var(--line)">f(x)=...</b>?<br><em style="color:#f97316;">(Der Punkt wird erst nach der Antwort im Graphen aufgedeckt!)</em></div>
+
+          <div class="step-box">
+             <div style="margin-bottom:8px; font-weight:600;">1. y-Wert berechnen:</div>
+             <div style="display:flex; align-items:center; gap:8px;">
+               <span>f(<span id="pointQuizPx"></span>) = </span>
+               <input type="number" id="quizPointCalc" style="width:80px" step="0.1" placeholder="y = ?">
+             </div>
+          </div>
+
+          <div style="margin: 12px 0;">
+             <div style="margin-bottom:8px; font-weight:600;">2. Entscheidung treffen:</div>
+             <div class="row">
+               <button class="btn" id="checkPointYes" style="background:var(--ok)">Ja, P liegt darauf</button>
+               <button class="btn" id="checkPointNo" style="background:#dc2626">Nein, P liegt daneben</button>
+             </div>
+          </div>
+
+          <div class="row" style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px;">
+            <button class="btn gray" id="newPointTest">Nächster Punkt</button>
+          </div>
+          <div class="feedback" id="feedbackPointTest"></div>
+          <div class="mini" id="solutionPointTest" style="margin-top:8px"></div>
+        </div>
+
+        <!-- SD Quiz -->
+        <div class="card hidden" id="quizCardSD">
+          <h3>Steigungsdreieck-Quiz</h3>
+          <div class="subtle">Lies Steigung und y-Achsenabschnitt aus dem Graphen ab. Alle Werte sind Vielfache von 0.5.</div>
+          <div class="control" style="grid-template-columns:32px 1fr 100px"><label>m</label><div></div><input type="number" id="quizSdM" step="0.5"></div>
+          <div class="control" style="grid-template-columns:32px 1fr 100px"><label>b</label><div></div><input type="number" id="quizSdB" step="0.5"></div>
+          <div class="row"><button class="btn" id="checkSd">Antwort prüfen</button><button class="btn gray" id="newSd">Neues Quiz</button></div>
+          <div class="feedback" id="feedbackSd"></div>
+          <div class="mini" id="solutionSd" style="margin-top:8px"></div>
+        </div>
+
+        <!-- Line Quiz -->
+        <div class="card hidden" id="quizCardLine">
+          <h3>Quiz: Bestimme die Geraden</h3>
+          <div class="subtle">Bestimme die Funktionsgleichungen der beiden eingezeichneten Geraden. Alle Werte sind Vielfache von 0.5.</div>
+          <div class="badge">Lila: Gerade 1</div>
+          <div class="control" style="grid-template-columns:32px 1fr 100px"><label>m</label><div></div><input type="number" id="lineM1" step="0.5"></div>
+          <div class="control" style="grid-template-columns:32px 1fr 100px"><label>b</label><div></div><input type="number" id="lineB1" step="0.5"></div>
+          <div class="badge" style="margin-top:8px">Rot: Gerade 2</div>
+          <div class="control" style="grid-template-columns:32px 1fr 100px"><label>m</label><div></div><input type="number" id="lineM2" step="0.5"></div>
+          <div class="control" style="grid-template-columns:32px 1fr 100px"><label>b</label><div></div><input type="number" id="lineB2" step="0.5"></div>
+          <div class="row"><button class="btn" id="checkLine">Antworten prüfen</button><button class="btn gray" id="newLine">Neues Quiz</button></div>
+          <div class="feedback" id="feedbackLine"></div>
+          <div class="mini" id="solutionLine" style="margin-top:8px"></div>
+        </div>
+      </div>
+      <div class="graphbox">
+        <div class="graphhead">Quiz-Koordinatensystem</div>
+        <canvas id="quizCanvas" width="760" height="480"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const world={xmin:-10,xmax:10,ymin:-10,ymax:10};
+const graph=document.getElementById('graph'), ctx=graph.getContext('2d');
+const quizCanvas=document.getElementById('quizCanvas'), qctx=quizCanvas.getContext('2d');
+
+const contexts = {
+  none: { x: 'x', y: 'y', labelM: 'm', labelB: 'b', desc: 'Steigung und y-Achsenabschnitt sind beliebig wählbar (Pfeile in 0.1-Schritten).', defM: 1, defB: 0 },
+  taxi: { x: 'Strecke (km)', y: 'Preis (€)', labelM: 'm (€/km)', labelB: 'b (Grundgebühr)', desc: 'Taxifahrt: Die Grundgebühr ist b, jeder Kilometer kostet m.', defM: 1.5, defB: 3 },
+  kerze: { x: 'Zeit (h)', y: 'Höhe (cm)', labelM: 'm (cm/h)', labelB: 'b (Start-Höhe)', desc: 'Kerze: Sie ist b cm hoch und brennt pro Stunde um m cm ab.', defM: -1.0, defB: 8 },
+  wasser: { x: 'Zeit (min)', y: 'Volumen (l)', labelM: 'm (l/min)', labelB: 'b (Start-Liter)', desc: 'Wassertank: Startet mit b Litern, es fließen m Liter pro Minute ein/ab.', defM: 2, defB: 1 }
+};
+
+const state={m:1,b:0,m2:-1,b2:0,xStart:1,dx:2,pointX:2,quizType:'none',sdQuiz:null,lineQuiz:null,pointQuiz:null,ctx:'none'};
+
+function snap05(v){return Math.round(v*2)/2}
+function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
+function fmt(n){ return Number(n) % 1 === 0 ? Number(n).toFixed(1) : Number(n).toFixed(2).replace(/0$/, ''); }
+function fmtLine(m,b,name='f'){
+  let s=`${name}(x) = ${fmt(m)}x`;
+  if(b>0)s+=` + ${fmt(b)}`;
+  else if(b<0)s+=` - ${fmt(Math.abs(b))}`;
+  return s;
+}
+function wx(c,x){return ((x-world.xmin)/(world.xmax-world.xmin))*c.width}
+function wy(c,y){return c.height-((y-world.ymin)/(world.ymax-world.ymin))*c.height}
+function pt(c,x,y){return {x:wx(c,x),y:wy(c,y)}}
+function yLine(m,b,x){return m*x+b}
+
+function drawBase(c,g){
+  const isDark = document.body.classList.contains('dark');
+  g.clearRect(0,0,c.width,c.height); 
+  g.fillStyle = isDark ? '#1e293b' : '#fff'; 
+  g.fillRect(0,0,c.width,c.height);
+
+  for(let x=world.xmin;x<=world.xmax;x+=0.5){
+    g.beginPath(); g.moveTo(wx(c,x),0); g.lineTo(wx(c,x),c.height);
+    const major=Math.abs(x-Math.round(x))<1e-9;
+    g.strokeStyle= x===0 ? (isDark?'#64748b':'#94a3b8') : major ? (isDark?'#334155':'#e5e7eb') : (isDark?'#1e293b':'#f1f5f9');
+    g.lineWidth= x===0 ? 2 : 1; g.stroke();
+  }
+  for(let y=world.ymin;y<=world.ymax;y+=0.5){
+    g.beginPath(); g.moveTo(0,wy(c,y)); g.lineTo(c.width,wy(c,y));
+    const major=Math.abs(y-Math.round(y))<1e-9;
+    g.strokeStyle= y===0 ? (isDark?'#64748b':'#94a3b8') : major ? (isDark?'#334155':'#e5e7eb') : (isDark?'#1e293b':'#f1f5f9');
+    g.lineWidth= y===0 ? 2 : 1; g.stroke();
+  }
+
+  g.fillStyle = isDark ? '#94a3b8' : '#334155'; g.font='12px system-ui';
+  for(let x=-10;x<=10;x++){ if(x===0) continue; g.fillText(String(x), wx(c,x)-4, wy(c,0)+14); }
+  for(let y=-10;y<=10;y++){ if(y===0) continue; g.fillText(String(y), wx(c,0)+4, wy(c,y)+4); }
+
+  // Context Labels
+  const ctxData = contexts[state.ctx];
+  if (state.ctx !== 'none') {
+      g.font = 'italic 15px Georgia, serif';
+      g.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+      g.fillText(ctxData.x, wx(c, world.xmax) - g.measureText(ctxData.x).width - 15, wy(c, 0) - 10);
+      g.fillText(ctxData.y, wx(c, 0) + 10, wy(c, world.ymax) + 20);
+  }
+}
+
+function drawLine(c,g,m,b,color,width=3,dash=[]){
+  g.save(); g.strokeStyle=color; g.lineWidth=width; g.setLineDash(dash); g.beginPath();
+  const p1=pt(c,world.xmin,yLine(m,b,world.xmin)), p2=pt(c,world.xmax,yLine(m,b,world.xmax));
+  g.moveTo(p1.x,p1.y); g.lineTo(p2.x,p2.y); g.stroke(); g.restore();
+}
+function dot(c,g,x,y,color,r=5,fill=true){ const p=pt(c,x,y); g.save(); g.beginPath(); g.arc(p.x,p.y,r,0,Math.PI*2); if(fill){g.fillStyle=color; g.fill();} else {g.lineWidth=3; g.strokeStyle=color; g.stroke();} g.restore(); }
+function label(c,g,x,y,text,color='#111827',dx=8,dy=-8){
+  const isDark = document.body.classList.contains('dark');
+  const bg = isDark ? 'rgba(30,41,59,.9)' : 'rgba(255,255,255,.9)';
+  const p=pt(c,x,y); g.save(); g.font='12px system-ui'; const w=g.measureText(text).width+8; g.fillStyle=bg; g.fillRect(p.x+dx-4,p.y+dy-14,w,18); 
+  if(isDark){
+    if(color==='#111827') color='#f8fafc';
+    if(color==='#166534' || color==='#15803d') color='#4ade80';
+    if(color==='#1d4ed8') color='#60a5fa';
+    if(color==='#991b1b' || color==='#b91c1c') color='#f87171';
+    if(color==='#c2410c') color='#fb923c';
+  }
+  g.fillStyle=color; g.fillText(text,p.x+dx,p.y+dy); g.restore();
+}
+function slopeTriangle(c,g,m,b,x0,dx,color='#16a34a'){
+  const y0=yLine(m,b,x0), x1=x0+dx, y1=yLine(m,b,x1); const p0=pt(c,x0,y0), ph=pt(c,x1,y0), p1=pt(c,x1,y1);
+  g.save(); g.strokeStyle=color; g.lineWidth=2; g.setLineDash([6,4]); g.beginPath(); g.moveTo(p0.x,p0.y); g.lineTo(ph.x,ph.y); g.lineTo(p1.x,p1.y); g.stroke(); g.restore();
+  dot(c,g,x0,y0,color,4,true); dot(c,g,x1,y1,color,4,true);
+  label(c,g,(x0+x1)/2,y0,`Δx = ${dx}`,color,0,18); label(c,g,x1,(y0+y1)/2,`Δy = ${fmt(y1-y0)}`,color,8,0);
+}
+
+function updateExploreText(){
+  document.getElementById('eqMain').textContent=fmtLine(state.m,state.b,'f');
+  document.getElementById('eqSecond').textContent=fmtLine(state.m2,state.b2,'g');
+  document.getElementById('mVal').textContent=fmt(state.m); document.getElementById('bVal').textContent=fmt(state.b);
+  document.getElementById('m2Val').textContent=fmt(state.m2); document.getElementById('b2Val').textContent=fmt(state.b2);
+  document.getElementById('xStartVal').textContent=state.xStart; document.getElementById('dxVal').textContent=state.dx;
+  const py=yLine(state.m,state.b,state.pointX); document.getElementById('pointEq').textContent=`P = (${fmt(state.pointX)} | ${fmt(py)})`;
+  const it=document.getElementById('intersectionText');
+  if(Math.abs(state.m-state.m2)<1e-9){ it.innerHTML = Math.abs(state.b-state.b2)<1e-9 ? '<span class="good">Die Geraden sind identisch.</span>' : '<span class="bad">Kein Schnittpunkt, die Geraden sind parallel.</span>'; }
+  else { const x=(state.b2-state.b)/(state.m-state.m2), y=yLine(state.m,state.b,x); it.innerHTML=`S = (${x.toFixed(2)} | ${y.toFixed(2)})`; }
+}
+
+function updateTable(){
+  const body=document.getElementById('valueBody'); body.innerHTML='';
+  for(let x=-10;x<=10;x++){
+    const tr=document.createElement('tr'); tr.innerHTML=`<td>${x}</td><td>${yLine(state.m,state.b,x).toFixed(2)}</td>`; body.appendChild(tr);
+  }
+}
+
+function redrawExplore(){
+  drawBase(graph,ctx); drawLine(graph,ctx,state.m,state.b,'#2563eb',3);
+  dot(graph,ctx,0,state.b,'#2563eb',5,true); label(graph,ctx,0,state.b,`b = ${fmt(state.b)}`,'#1d4ed8',10,-10);
+  if(document.getElementById('modeSlope').checked) slopeTriangle(graph,ctx,state.m,state.b,state.xStart,state.dx,'#16a34a');
+  if(document.getElementById('modePoint').checked){ const y=yLine(state.m,state.b,state.pointX); dot(graph,ctx,state.pointX,y,'#16a34a',6,true); label(graph,ctx,state.pointX,y,`P(${fmt(state.pointX)}|${fmt(y)})`,'#15803d',8,-8); }
+  if(document.getElementById('modeIntersection').checked){
+    drawLine(graph,ctx,state.m2,state.b2,'#dc2626',3); dot(graph,ctx,0,state.b2,'#dc2626',5,true); label(graph,ctx,0,state.b2,`b₂ = ${fmt(state.b2)}`,'#b91c1c',10,14);
+    if(Math.abs(state.m-state.m2)>1e-9){ const x=(state.b2-state.b)/(state.m-state.m2), y=yLine(state.m,state.b,x); if(x>=-10&&x<=10&&y>=-10&&y<=10){ dot(graph,ctx,x,y,'#dc2626',8,false); label(graph,ctx,x,y,`S(${x.toFixed(2)}|${y.toFixed(2)})`,'#991b1b',10,-8);} }
+  }
+}
+
+function bindPair(rangeId,numId,key,post,warningId){
+  const r=document.getElementById(rangeId), n=document.getElementById(numId);
+
+  r.addEventListener('input', e=>{
+    let val = parseFloat(e.target.value||0);
+    state[key] = val;
+    n.value = val;
+    if(warningId) document.getElementById(warningId).classList.add('hidden');
+    if(post)post();
+  });
+
+  n.addEventListener('input', e=>{
+    let str = e.target.value;
+    if(str === '' || str === '-' || str === '-.' || str === '.' || isNaN(parseFloat(str))) {
+      if(warningId) document.getElementById(warningId).classList.remove('hidden');
+      return; // Do not overwrite state or input field yet
+    }
+    if(warningId) document.getElementById(warningId).classList.add('hidden');
+    state[key] = parseFloat(str);
+    r.value = state[key];
+    if(post)post();
+  });
+
+  n.addEventListener('change', e=>{
+    let str = e.target.value;
+    if(str === '' || isNaN(parseFloat(str))) {
+       n.value = state[key]; // restore
+       if(warningId) document.getElementById(warningId).classList.add('hidden');
+    } else {
+       state[key] = clamp(parseFloat(str), parseFloat(r.min), parseFloat(r.max));
+       n.value = state[key];
+       r.value = state[key];
+    }
+    if(post)post();
+  });
+
+  n.value = state[key];
+  r.value = state[key];
+}
+function bindIntPair(rangeId,numId,key,post){
+  const r=document.getElementById(rangeId), n=document.getElementById(numId);
+  function set(v){ state[key]=clamp(Math.round(parseFloat(v||0)), parseFloat(r.min), parseFloat(r.max)); r.value=state[key]; n.value=state[key]; if(post)post(); }
+  r.addEventListener('input',e=>set(e.target.value)); n.addEventListener('input',e=>set(e.target.value)); set(state[key]);
+}
+
+function syncUi(){
+  updateExploreText(); updateTable(); redrawExplore();
+  document.getElementById('slopeCard').classList.toggle('hidden', !document.getElementById('modeSlope').checked);
+  document.getElementById('pointCard').classList.toggle('hidden', !document.getElementById('modePoint').checked);
+  document.getElementById('interCard').classList.toggle('hidden', !document.getElementById('modeIntersection').checked);
+}
+
+bindPair('mRange','mNum','m',syncUi,'mainWarning'); bindPair('bRange','bNum','b',syncUi,'mainWarning'); bindPair('m2Range','m2Num','m2',syncUi,'interWarning'); bindPair('b2Range','b2Num','b2',syncUi,'interWarning');
+bindIntPair('xStartRange','xStartNum','xStart',syncUi); bindIntPair('dxRange','dxNum','dx',syncUi);
+document.getElementById('pointX').addEventListener('input',e=>{
+  let str = e.target.value;
+  if(str==='' || str==='-' || isNaN(parseFloat(str))) return; // wait for valid input
+  state.pointX=clamp(parseFloat(str),-10,10); 
+  syncUi();
+});
+document.getElementById('pointX').addEventListener('change',e=>{
+  if(isNaN(parseFloat(e.target.value))) e.target.value = state.pointX;
+  else { state.pointX = clamp(parseFloat(e.target.value),-10,10); e.target.value = state.pointX; }
+  syncUi();
+});
+['modePoint','modeIntersection','modeSlope'].forEach(id=>document.getElementById(id).addEventListener('change',syncUi));
+
+// --- Context Switcher ---
+document.getElementById('contextSelect').addEventListener('change', (e) => {
+  state.ctx = e.target.value;
+  const ctxData = contexts[state.ctx];
+
+  // Update Labels
+  document.getElementById('labelM').textContent = ctxData.labelM;
+  document.getElementById('labelB').textContent = ctxData.labelB;
+  document.getElementById('exploreDesc').textContent = ctxData.desc;
+  document.getElementById('thX').textContent = ctxData.x;
+  document.getElementById('thY').textContent = ctxData.y;
+
+  // Set default values based on context
+  document.getElementById('mRange').value = ctxData.defM;
+  document.getElementById('mNum').value = ctxData.defM;
+  document.getElementById('bRange').value = ctxData.defB;
+  document.getElementById('bNum').value = ctxData.defB;
+
+  // Trigger update
+  document.getElementById('mRange').dispatchEvent(new Event('input'));
+});
+
+// --- Theme Toggle ---
+document.getElementById('themeToggle').addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+  document.getElementById('themeToggle').textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
+  syncUi(); drawQuiz();
+});
+
+// --- Quiz Logic ---
+function randHalf(min,max){ const vals=[]; for(let v=min;v<=max+1e-9;v+=0.5) vals.push(Number(v.toFixed(1))); return vals[Math.floor(Math.random()*vals.length)]; }
+
+function newPointTestQuiz() {
+  const m = randHalf(-3, 3) || 1;
+  const b = randHalf(-4, 4);
+  const isTrue = Math.random() > 0.5;
+  const px = Math.floor(Math.random() * 16) - 8;
+  let py = yLine(m, b, px);
+
+  if (!isTrue) {
+    let offset = Math.floor(Math.random() * 5) + 1;
+    if (Math.random() > 0.5) offset *= -1;
+    py += offset;
+  }
+
+  state.pointQuiz = { m, b, px, py, isTrue, actualY: yLine(m, b, px), revealed: false };
+  document.getElementById('pointQuizP').textContent = `P(${px} | ${py})`;
+  document.getElementById('pointQuizEq').textContent = fmtLine(m, b, 'f');
+  document.getElementById('pointQuizPx').textContent = px;
+
+  document.getElementById('quizPointCalc').value = '';
+  document.getElementById('feedbackPointTest').textContent = '';
+  document.getElementById('solutionPointTest').innerHTML = '';
+
+  drawQuiz();
+}
+
+function newSdQuiz(){
+  let m=randHalf(-3,3); if(m===0)m=1; const b=randHalf(-4,4);
+  state.sdQuiz={m,b}; document.getElementById('quizSdM').value=''; document.getElementById('quizSdB').value=''; document.getElementById('feedbackSd').textContent=''; document.getElementById('feedbackSd').className='feedback'; document.getElementById('solutionSd').textContent=''; drawQuiz();
+}
+
+function newLineQuiz(){
+  let m1=randHalf(-3,3), m2=randHalf(-3,3); if(m1===0)m1=1; if(m2===0)m2=-1; while(m1===m2) m2=randHalf(-3,3); const b1=randHalf(-4,4), b2=randHalf(-4,4);
+  state.lineQuiz={m1,b1,m2,b2}; ['lineM1','lineB1','lineM2','lineB2'].forEach(id=>document.getElementById(id).value=''); document.getElementById('feedbackLine').textContent=''; document.getElementById('feedbackLine').className='feedback'; document.getElementById('solutionLine').textContent=''; drawQuiz();
+}
+
+function drawQuiz(){
+  drawBase(quizCanvas,qctx);
+
+  ['quizCardSD', 'quizCardLine', 'quizCardPointTest'].forEach(id => document.getElementById(id).classList.add('hidden'));
+
+  if(state.quizType === 'point' && state.pointQuiz) {
+    const q = state.pointQuiz;
+    drawLine(quizCanvas, qctx, q.m, q.b, '#2563eb', 3);
+    if (q.revealed) {
+      dot(quizCanvas, qctx, q.px, q.py, '#f97316', 6, true);
+      label(quizCanvas, qctx, q.px, q.py, `P(${q.px}|${q.py})`, '#c2410c', 10, -10);
+    }
+    document.getElementById('quizCardPointTest').classList.remove('hidden');
+  }
+  else if(state.quizType==='sd' && state.sdQuiz){
+    const q=state.sdQuiz; 
+    drawLine(quizCanvas,qctx,q.m,q.b,'#10b981',3); 
+    document.getElementById('quizCardSD').classList.remove('hidden');
+  }
+  else if(state.quizType==='line' && state.lineQuiz){
+    const q=state.lineQuiz; 
+    drawLine(quizCanvas,qctx,q.m1,q.b1,'#8b5cf6',3,[8,5]); 
+    drawLine(quizCanvas,qctx,q.m2,q.b2,'#ef4444',3,[8,5]); 
+    document.getElementById('quizCardLine').classList.remove('hidden');
+  }
+}
+
+function setQuizType(type){
+  state.quizType=type; const quizArea=document.getElementById('quizArea'), explore=document.getElementById('exploreArea'), endBtn=document.getElementById('endQuizBtn');
+  if(type==='none'){ quizArea.classList.add('hidden'); endBtn.classList.add('hidden'); explore.classList.remove('hidden'); return; }
+  quizArea.classList.remove('hidden'); endBtn.classList.remove('hidden'); explore.classList.add('hidden');
+
+  if(type==='point'&&!state.pointQuiz) newPointTestQuiz();
+  if(type==='sd'&&!state.sdQuiz) newSdQuiz(); 
+  if(type==='line'&&!state.lineQuiz) newLineQuiz(); 
+  drawQuiz();
+}
+document.querySelectorAll('input[name="quizType"]').forEach(r=>r.addEventListener('change',e=>setQuizType(e.target.value)));
+document.getElementById('endQuizBtn').addEventListener('click',()=>{ document.querySelector('input[name="quizType"][value="none"]').checked=true; setQuizType('none'); });
+
+// Check Point Quiz
+function handlePointCheck(userSaysYes) {
+  const calcInput = document.getElementById('quizPointCalc').value;
+  const fb = document.getElementById('feedbackPointTest');
+  const sol = document.getElementById('solutionPointTest');
+
+  if(calcInput === '') {
+    fb.innerHTML = '<span class="bad">Bitte berechne zuerst den y-Wert!</span>';
+    sol.innerHTML = '';
+    return;
+  }
+
+  const calcVal = parseFloat(calcInput);
+  const q = state.pointQuiz;
+
+  // Reveal the point now that an answer was submitted
+  q.revealed = true;
+  drawQuiz();
+
+  const calcOk = Math.abs(calcVal - q.actualY) < 1e-9;
+  const decisionOk = (userSaysYes === q.isTrue);
+
+  let msg = '';
+  if(calcOk && decisionOk) {
+    msg = '<span class="good">✓ Perfekt! Rechnung und Entscheidung sind richtig.</span>';
+  } else if (!calcOk && decisionOk) {
+    msg = '<span style="color:#f97316">⚠ Entscheidung richtig, aber die Rechnung stimmt nicht.</span>';
+  } else if (calcOk && !decisionOk) {
+    msg = '<span style="color:#f97316">⚠ Rechnung richtig, aber falsche Entscheidung getroffen!</span>';
+  } else {
+    msg = '<span class="bad">✗ Rechnung und Entscheidung sind leider falsch.</span>';
+  }
+
+  fb.innerHTML = msg;
+  sol.innerHTML = `Rechnung: f(${q.px}) = ${fmt(q.m)} · (${q.px}) ${q.b >= 0 ? '+' : '-'} ${fmt(Math.abs(q.b))} = <b>${fmt(q.actualY)}</b>.<br>` +
+                  (q.isTrue ? `Da ${fmt(q.actualY)} = ${q.py} ist, liegt der Punkt auf der Geraden.` : `Da ${fmt(q.actualY)} ≠ ${q.py} ist, liegt der Punkt <b>nicht</b> auf der Geraden.`);
+}
+document.getElementById('checkPointYes').addEventListener('click', () => handlePointCheck(true));
+document.getElementById('checkPointNo').addEventListener('click', () => handlePointCheck(false));
+document.getElementById('newPointTest').addEventListener('click', newPointTestQuiz);
+
+// Check SD Quiz
+document.getElementById('checkSd').addEventListener('click',()=>{
+  const mInput = document.getElementById('quizSdM').value;
+  const bInput = document.getElementById('quizSdB').value;
+  const fb=document.getElementById('feedbackSd'), sol=document.getElementById('solutionSd');
+
+  if(mInput === '' || bInput === ''){ fb.textContent='Bitte beide Werte eingeben.'; fb.className='feedback bad'; sol.textContent=''; return; }
+
+  const m = snap05(parseFloat(mInput)), b = snap05(parseFloat(bInput));
+  const mOk = Math.abs(m-state.sdQuiz.m)<1e-9;
+  const bOk = Math.abs(b-state.sdQuiz.b)<1e-9;
+
+  if(mOk && bOk){ 
+    fb.innerHTML='<span style="color:#16a34a">✓ Alles richtig!</span>'; 
+    sol.innerHTML=`Die Gerade lautet <b>${fmtLine(state.sdQuiz.m,state.sdQuiz.b,'f')}</b>.`; 
+  } else if(mOk && !bOk) {
+    fb.innerHTML='<span style="color:#16a34a">✓ Steigung m ist richtig.</span> <br> <span style="color:#dc2626">✗ y-Achsenabschnitt b ist noch falsch.</span>'; 
+    sol.innerHTML='';
+  } else if(!mOk && bOk) {
+    fb.innerHTML='<span style="color:#dc2626">✗ Steigung m ist noch falsch.</span> <br> <span style="color:#16a34a">✓ y-Achsenabschnitt b ist richtig.</span>'; 
+    sol.innerHTML='';
+  } else { 
+    fb.innerHTML='<span style="color:#dc2626">✗ Beide Werte sind noch falsch. Versuche es nochmal!</span>'; 
+    sol.innerHTML='';
+  }
+});
+document.getElementById('newSd').addEventListener('click',newSdQuiz);
+
+// Check Line Quiz
+document.getElementById('checkLine').addEventListener('click',()=>{
+  const rawIds = ['lineM1','lineB1','lineM2','lineB2'].map(id=>document.getElementById(id).value);
+  const fb=document.getElementById('feedbackLine'), sol=document.getElementById('solutionLine');
+
+  if(rawIds.some(v=>v==='')){ fb.textContent='Bitte alle vier Werte eingeben.'; fb.className='feedback bad'; sol.textContent=''; return; }
+
+  const ids = rawIds.map(v=>snap05(parseFloat(v)));
+  const q=state.lineQuiz; 
+  const m1Ok = Math.abs(ids[0]-q.m1)<1e-9;
+  const b1Ok = Math.abs(ids[1]-q.b1)<1e-9;
+  const m2Ok = Math.abs(ids[2]-q.m2)<1e-9;
+  const b2Ok = Math.abs(ids[3]-q.b2)<1e-9;
+
+  const ok1 = m1Ok && b1Ok;
+  const ok2 = m2Ok && b2Ok;
+
+  if(ok1 && ok2){ 
+    fb.innerHTML='<span style="color:#16a34a">✓ Sehr gut! Beide Geraden sind komplett richtig.</span>'; 
+    sol.innerHTML=`Gerade 1: <b>${fmtLine(q.m1,q.b1,'f')}</b> <br> Gerade 2: <b>${fmtLine(q.m2,q.b2,'g')}</b>.`;
+  } else { 
+    let text = '';
+    text += ok1 ? '<span style="color:#16a34a">✓ Gerade 1 ist richtig.</span><br>' : '<span style="color:#dc2626">✗ Gerade 1: ' + (m1Ok ? 'm ist richtig, b falsch' : (b1Ok ? 'b ist richtig, m falsch' : 'Beide Werte falsch')) + '.</span><br>';
+    text += ok2 ? '<span style="color:#16a34a">✓ Gerade 2 ist richtig.</span>' : '<span style="color:#dc2626">✗ Gerade 2: ' + (m2Ok ? 'm ist richtig, b falsch' : (b2Ok ? 'b ist richtig, m falsch' : 'Beide Werte falsch')) + '.</span>';
+    fb.innerHTML = text;
+    sol.innerHTML='';
+  }
+});
+document.getElementById('newLine').addEventListener('click',newLineQuiz);
+
+syncUi(); drawBase(quizCanvas,qctx);
+</script>
+</body>
+</html>

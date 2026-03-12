@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interaktiver Boxplot-Entdecker</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            background-color: #f8fafc;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        .data-point {
+            transition: r 0.15s ease, fill 0.15s ease, opacity 0.15s ease;
+            cursor: grab;
+        }
+
+        .data-point:active {
+            cursor: grabbing;
+        }
+
+        .data-point:hover {
+            r: 8;
+            fill: #2563eb;
+        }
+
+        .boxplot-part {
+            transition: all 0.25s ease;
+        }
+
+        .click-zone {
+            cursor: crosshair;
+        }
+
+        .focusable-svg:focus {
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useMemo, useRef, useState } = React;
+
+        const PRESETS = [
+            {
+                id: "schoolway",
+                label: "Schulweg",
+                title: "Schulweg einer Lerngruppe",
+                description: "Zeit in Minuten, die 12 Schüler für den Schulweg brauchen.",
+                unit: "Minuten",
+                axisLabel: "Schulweg in Minuten",
+                max: 30,
+                tickStep: 5,
+                snap: 1,
+                data: [8, 10, 11, 12, 12, 14, 15, 16, 18, 20, 24, 28],
+            },
+            {
+                id: "screentime",
+                label: "Bildschirmzeit",
+                title: "Tägliche Bildschirmzeit",
+                description: "Handy-/Tablet-Nutzung pro Tag in Minuten.",
+                unit: "Minuten",
+                axisLabel: "Nutzungszeit in Minuten",
+                max: 180,
+                tickStep: 30,
+                snap: 5,
+                data: [35, 42, 50, 55, 60, 68, 75, 85, 95, 110, 135, 160],
+            },
+            {
+                id: "sprint",
+                label: "100m-Lauf",
+                title: "100-Meter-Zeiten einer Klasse",
+                description: "Sprintzeiten in Sekunden, leicht unterschiedlich, aber realistisch nah beieinander.",
+                unit: "Sekunden",
+                axisLabel: "Zeit in Sekunden",
+                max: 20,
+                tickStep: 2,
+                snap: 0.1,
+                data: [13.1, 13.4, 13.8, 14.0, 14.2, 14.4, 14.8, 15.0, 15.2, 15.8, 16.4, 17.1],
+            },
+            {
+                id: "bus",
+                label: "Wartezeit Bus",
+                title: "Wartezeiten an der Bushaltestelle",
+                description: "Beobachtete Wartezeiten in Minuten über mehrere Tage.",
+                unit: "Minuten",
+                axisLabel: "Wartezeit in Minuten",
+                max: 20,
+                tickStep: 2,
+                snap: 1,
+                data: [1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 12, 18],
+            },
+        ];
+
+        function decimalsFromStep(step) {
+            const parts = String(step).split(".");
+            return parts[1] ? parts[1].length : 0;
+        }
+
+        function roundToStep(value, step) {
+            const rounded = Math.round(value / step) * step;
+            return Number(rounded.toFixed(decimalsFromStep(step)));
+        }
+
+        function App() {
+            const [preset, setPreset] = useState(PRESETS[0]);
+            const nextIdRef = useRef(PRESETS[0].data.length + 1);
+            const [data, setData] = useState(
+                PRESETS[0].data.map((value, index) => ({ id: index + 1, value }))
+            );
+            const [showOutliers, setShowOutliers] = useState(true);
+            const [draggingId, setDraggingId] = useState(null);
+            const [tooltip, setTooltip] = useState({
+                visible: false,
+                x: 0,
+                y: 0,
+                title: "",
+                text: "",
+            });
+
+            const svgRef = useRef(null);
+            const tooltipLayerRef = useRef(null);
+            const dragMovedRef = useRef(false);
+            const suppressAddRef = useRef(false);
+
+            const tooltipId = "boxplot-tooltip";
+
+            const plot = {
+                left: 60,
+                right: 760,
+                width: 700,
+                lineY: 255,
+                clickY: 210,
+                clickHeight: 65,
+                boxY: 85,
+                boxHeight: 80,
+                centerY: 125,
+                outlierY: 125,
+            };
+
+            const precision = decimalsFromStep(preset.snap);
+
+            const formatValue = (value) => {
+                if (value == null || Number.isNaN(value)) return "–";
+                return Number(value).toLocaleString("de-DE", {
+                    minimumFractionDigits: Number.isInteger(value) ? 0 : precision,
+                    maximumFractionDigits: precision,
+                });
+            };
+
+            const formatPercent = (value) => {
+                return Number(value).toLocaleString("de-DE", {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                }) + "%";
+            };
+
+            const scaleX = (val) => plot.left + (val / preset.max) * plot.width;
+
+            const valueFromSvgX = (svgX) => {
+                const raw = ((svgX - plot.left) / plot.width) * preset.max;
+                const clamped = Math.max(0, Math.min(preset.max, raw));
+                return roundToStep(clamped, preset.snap);
+            };
+
+            const getSvgPoint = (clientX, clientY) => {
+                const svg = svgRef.current;
+                if (!svg) return { x: 0, y: 0 };
+
+                const pt = svg.createSVGPoint();
+                pt.x = clientX;
+                pt.y = clientY;
+
+                const matrix = svg.getScreenCTM();
+                if (!matrix) return { x: 0, y: 0 };
+
+                const result = pt.matrixTransform(matrix.inverse());
+                return { x: result.x, y: result.y };
+            };
+
+            const getLayerRelativePosition = (clientX, clientY) => {
+                const layer = tooltipLayerRef.current;
+                if (!layer) return { x: 0, y: 0 };
+                const rect = layer.getBoundingClientRect();
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top,
+                };
+            };
+
+            const showTooltipFromEvent = (e, title, text) => {
+                const pos = getLayerRelativePosition(e.clientX, e.clientY);
+                setTooltip({
+                    visible: true,
+                    x: pos.x + 14,
+                    y: pos.y - 12,
+                    title,
+                    text,
+                });
+            };
+
+            const showTooltipFromElement = (element, title, text) => {
+                if (!element) return;
+                const rect = element.getBoundingClientRect();
+                const pos = getLayerRelativePosition(rect.left + rect.width / 2, rect.top);
+                setTooltip({
+                    visible: true,
+                    x: pos.x + 10,
+                    y: pos.y - 12,
+                    title,
+                    text,
+                });
+            };
+
+            const hideTooltip = () => {
+                setTooltip((t) => ({ ...t, visible: false }));
+            };
+
+            const makeTicks = (max, step) => {
+                const ticks = [];
+                for (let t = 0; t <= max + step / 1000; t += step) {
+                    ticks.push(Number(t.toFixed(decimalsFromStep(step))));
+                }
+                return ticks;
+            };
+
+            const explainQuantile = (sorted, p, label) => {
+                const n = sorted.length;
+                const rawPosition = p * n;
+
+                if (Number.isInteger(rawPosition)) {
+                    const k = rawPosition;
+                    const lowerRank = Math.max(1, Math.min(n, k));
+                    const upperRank = Math.max(1, Math.min(n, k + 1));
+                    const lowerValue = sorted[lowerRank - 1];
+                    const upperValue = sorted[upperRank - 1];
+                    const value =
+                        lowerRank === upperRank
+                            ? lowerValue
+                            : (lowerValue + upperValue) / 2;
+
+                    return {
+                        label,
+                        p,
+                        rawPosition,
+                        mode: lowerRank === upperRank ? "single" : "average",
+                        ranks: lowerRank === upperRank ? [lowerRank] : [lowerRank, upperRank],
+                        values: lowerRank === upperRank ? [lowerValue] : [lowerValue, upperValue],
+                        value,
+                    };
+                }
+
+                const rank = Math.ceil(rawPosition);
+                return {
+                    label,
+                    p,
+                    rawPosition,
+                    mode: "single",
+                    ranks: [rank],
+                    values: [sorted[rank - 1]],
+                    value: sorted[rank - 1],
+                };
+            };
+
+            const ticks = useMemo(() => makeTicks(preset.max, preset.tickStep), [preset]);
+
+            const stats = useMemo(() => {
+                if (data.length === 0) return null;
+
+                const sortedObjects = [...data].sort((a, b) => a.value - b.value);
+                const sorted = sortedObjects.map((d) => d.value);
+
+                const q1Info = explainQuantile(sorted, 0.25, "Q1");
+                const q2Info = explainQuantile(sorted, 0.5, "Median");
+                const q3Info = explainQuantile(sorted, 0.75, "Q3");
+
+                const q1 = q1Info.value;
+                const median = q2Info.value;
+                const q3 = q3Info.value;
+                const min = sorted[0];
+                const max = sorted[sorted.length - 1];
+                const mean = sorted.reduce((sum, val) => sum + val, 0) / sorted.length;
+
+                const iqr = q3 - q1;
+                const lowerFence = q1 - 1.5 * iqr;
+                const upperFence = q3 + 1.5 * iqr;
+
+                const outlierObjects = showOutliers
+                    ? sortedObjects.filter((d) => d.value < lowerFence || d.value > upperFence)
+                    : [];
+
+                const nonOutlierObjects = showOutliers
+                    ? sortedObjects.filter((d) => d.value >= lowerFence && d.value <= upperFence)
+                    : sortedObjects;
+
+                const whiskerMin =
+                    nonOutlierObjects.length > 0 ? nonOutlierObjects[0].value : min;
+                const whiskerMax =
+                    nonOutlierObjects.length > 0
+                        ? nonOutlierObjects[nonOutlierObjects.length - 1].value
+                        : max;
+
+                return {
+                    sortedObjects,
+                    sorted,
+                    n: sorted.length,
+                    min,
+                    max,
+                    q1,
+                    median,
+                    q3,
+                    mean,
+                    iqr,
+                    lowerFence,
+                    upperFence,
+                    whiskerMin,
+                    whiskerMax,
+                    outlierObjects,
+                    quartiles: {
+                        q1: q1Info,
+                        q2: q2Info,
+                        q3: q3Info,
+                    },
+                };
+            }, [data, showOutliers]);
+
+            const getRankLabels = (rank) => {
+                if (!stats) return [];
+                const labels = [];
+                if (stats.quartiles.q1.ranks.includes(rank)) labels.push("Q1");
+                if (stats.quartiles.q2.ranks.includes(rank)) labels.push("Median");
+                if (stats.quartiles.q3.ranks.includes(rank)) labels.push("Q3");
+                return labels;
+            };
+
+            const loadPreset = (newPreset) => {
+                setPreset(newPreset);
+                setDraggingId(null);
+                hideTooltip();
+                const items = newPreset.data.map((value) => ({
+                    id: nextIdRef.current++,
+                    value,
+                }));
+                setData(items);
+            };
+
+            const clearAll = () => {
+                setDraggingId(null);
+                hideTooltip();
+                setData([]);
+            };
+
+            const addPoint = (value) => {
+                setData((prev) => [...prev, { id: nextIdRef.current++, value }]);
+            };
+
+            const removePoint = (id) => {
+                hideTooltip();
+                setData((prev) => prev.filter((item) => item.id !== id));
+            };
+
+            const updatePoint = (id, value) => {
+                setData((prev) =>
+                    prev.map((item) => (item.id === id ? { ...item, value } : item))
+                );
+            };
+
+            const handleLineClick = (e) => {
+                if (suppressAddRef.current) return;
+                const { x } = getSvgPoint(e.clientX, e.clientY);
+                addPoint(valueFromSvgX(x));
+            };
+
+            const startDrag = (e, id) => {
+                e.stopPropagation();
+                e.preventDefault();
+                dragMovedRef.current = false;
+                setDraggingId(id);
+                if (e.currentTarget.setPointerCapture) {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                }
+            };
+
+            const moveDrag = (e, id) => {
+                if (draggingId !== id) return;
+                e.stopPropagation();
+                e.preventDefault();
+                dragMovedRef.current = true;
+                const { x } = getSvgPoint(e.clientX, e.clientY);
+                const newValue = valueFromSvgX(x);
+                updatePoint(id, newValue);
+                showTooltipFromEvent(
+                    e,
+                    "Datenpunkt",
+                    `Aktueller Wert: ${formatValue(newValue)} ${preset.unit}`
+                );
+            };
+
+            const endDrag = (e, id) => {
+                if (draggingId !== id) return;
+                e.stopPropagation();
+                e.preventDefault();
+
+                if (e.currentTarget.releasePointerCapture) {
+                    try {
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                    } catch (_) {}
+                }
+
+                if (dragMovedRef.current) {
+                    suppressAddRef.current = true;
+                    window.setTimeout(() => {
+                        suppressAddRef.current = false;
+                    }, 0);
+                }
+
+                setDraggingId(null);
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto p-6">
+                    <header className="mb-8 text-center">
+                        <h1 className="text-4xl font-bold text-slate-800 mb-3">
+                            Interaktiver Boxplot-Entdecker 📊
+                        </h1>
+                        <p className="text-slate-600 text-lg">
+                            Klicke auf die Zahlengerade, um neue Datenpunkte hinzuzufügen.
+                            <br />
+                            Ziehe blaue Punkte entlang der Geraden, um Werte zu verändern. Doppelklick löscht einen Punkt.
+                        </p>
+                    </header>
+
+                    <div className="bg-white rounded-2xl shadow-xl p-4 mb-6 border border-slate-100">
+                        <div className="flex flex-wrap gap-3 mb-4">
+                            {PRESETS.map((p) => (
+                                <button
+                                    key={p.id}
+                                    onClick={() => loadPreset(p)}
+                                    className={`px-4 py-2 rounded-full font-semibold transition ${
+                                        preset.id === p.id
+                                            ? "bg-blue-600 text-white shadow"
+                                            : "bg-blue-50 text-blue-800 hover:bg-blue-100"
+                                    }`}
+                                >
+                                    {p.label}
+                                </button>
+                            ))}
+
+                            <button
+                                onClick={clearAll}
+                                className="px-4 py-2 rounded-full font-semibold bg-red-100 text-red-800 hover:bg-red-200 transition"
+                            >
+                                Alle löschen
+                            </button>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-slate-700">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={showOutliers}
+                                    onChange={(e) => setShowOutliers(e.target.checked)}
+                                    className="h-4 w-4"
+                                />
+                                Klassischer Boxplot mit Ausreißern anzeigen
+                            </label>
+
+                            <div className="px-3 py-1 rounded-full bg-slate-100 text-slate-700">
+                                Kontext: <strong>{preset.title}</strong>
+                            </div>
+
+                            <div className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                Methode: p·n-Regel für Quartile
+                            </div>
+                        </div>
+
+                        <p className="mt-4 text-slate-600">{preset.description}</p>
+                    </div>
+
+                    <div
+                        ref={tooltipLayerRef}
+                        className="bg-white rounded-2xl shadow-xl p-4 mb-8 border border-slate-100 relative"
+                    >
+                        {data.length === 0 && (
+                            <div className="absolute inset-0 pointer-events-none flex items-center justify-center bg-white/80 z-10 text-xl font-bold text-slate-400 rounded-2xl">
+                                Füge Punkte auf der Geraden hinzu!
+                            </div>
+                        )}
+
+                        <svg
+                            ref={svgRef}
+                            width="100%"
+                            height="340"
+                            viewBox="0 0 820 340"
+                            className="select-none"
+                            style={{ touchAction: "none" }}
+                        >
+                            <text
+                                x="410"
+                                y="25"
+                                textAnchor="middle"
+                                className="fill-slate-700 font-bold text-lg"
+                            >
+                                {preset.axisLabel}
+                            </text>
+
+                            <rect
+                                x={plot.left}
+                                y={plot.clickY}
+                                width={plot.width}
+                                height={plot.clickHeight}
+                                fill="transparent"
+                                className="click-zone"
+                                onClick={handleLineClick}
+                                onMouseEnter={(e) =>
+                                    showTooltipFromEvent(
+                                        e,
+                                        "Neue Punkte hinzufügen",
+                                        `Klicke auf die Zahlengerade, um einen neuen Wert in ${preset.unit} anzulegen.`
+                                    )
+                                }
+                                onMouseMove={(e) =>
+                                    showTooltipFromEvent(
+                                        e,
+                                        "Neue Punkte hinzufügen",
+                                        `Klicke auf die Zahlengerade, um einen neuen Wert in ${preset.unit} anzulegen.`
+                                    )
+                                }
+                                onMouseLeave={hideTooltip}
+                            />
+
+                            <line
+                                x1={plot.left}
+                                y1={plot.lineY}
+                                x2={plot.right}
+                                y2={plot.lineY}
+                                stroke="#cbd5e1"
+                                strokeWidth="4"
+                            />
+
+                            {ticks.map((tick) => (
+                                <g key={tick}>
+                                    <line
+                                        x1={scaleX(tick)}
+                                        y1={plot.lineY - 12}
+                                        x2={scaleX(tick)}
+                                        y2={plot.lineY + 12}
+                                        stroke="#94a3b8"
+                                        strokeWidth="2"
+                                    />
+                                    <text
+                                        x={scaleX(tick)}
+                                        y={plot.lineY + 32}
+                                        textAnchor="middle"
+                                        className="fill-slate-500 font-bold"
+                                    >
+                                        {formatValue(tick)}
+                                    </text>
+                                </g>
+                            ))}
+
+                            {stats && (
+                                <g className="boxplot-part">
+                                    <line
+                                        x1={scaleX(stats.whiskerMin)}
+                                        y1={plot.centerY}
+                                        x2={scaleX(stats.q1)}
+                                        y2={plot.centerY}
+                                        stroke="#3b82f6"
+                                        strokeWidth="3"
+                                        strokeDasharray="6,6"
+                                        tabIndex="0"
+                                        className="focusable-svg"
+                                        aria-describedby={tooltipId}
+                                        onMouseEnter={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Linker Whisker",
+                                                `Er verbindet das kleinste Nicht-Ausreißer-Ergebnis (${formatValue(stats.whiskerMin)}) mit Q1 (${formatValue(stats.q1)}).`
+                                            )
+                                        }
+                                        onMouseMove={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Linker Whisker",
+                                                `Er verbindet das kleinste Nicht-Ausreißer-Ergebnis (${formatValue(stats.whiskerMin)}) mit Q1 (${formatValue(stats.q1)}).`
+                                            )
+                                        }
+                                        onMouseLeave={hideTooltip}
+                                        onFocus={(e) =>
+                                            showTooltipFromElement(
+                                                e.currentTarget,
+                                                "Linker Whisker",
+                                                `Er verbindet das kleinste Nicht-Ausreißer-Ergebnis (${formatValue(stats.whiskerMin)}) mit Q1 (${formatValue(stats.q1)}).`
+                                            )
+                                        }
+                                        onBlur={hideTooltip}
+                                    />
+
+                                    <line
+                                        x1={scaleX(stats.q3)}
+                                        y1={plot.centerY}
+                                        x2={scaleX(stats.whiskerMax)}
+                                        y2={plot.centerY}
+                                        stroke="#3b82f6"
+                                        strokeWidth="3"
+                                        strokeDasharray="6,6"
+                                        tabIndex="0"
+                                        className="focusable-svg"
+                                        aria-describedby={tooltipId}
+                                        onMouseEnter={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Rechter Whisker",
+                                                `Er verbindet Q3 (${formatValue(stats.q3)}) mit dem größten Nicht-Ausreißer-Ergebnis (${formatValue(stats.whiskerMax)}).`
+                                            )
+                                        }
+                                        onMouseMove={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Rechter Whisker",
+                                                `Er verbindet Q3 (${formatValue(stats.q3)}) mit dem größten Nicht-Ausreißer-Ergebnis (${formatValue(stats.whiskerMax)}).`
+                                            )
+                                        }
+                                        onMouseLeave={hideTooltip}
+                                        onFocus={(e) =>
+                                            showTooltipFromElement(
+                                                e.currentTarget,
+                                                "Rechter Whisker",
+                                                `Er verbindet Q3 (${formatValue(stats.q3)}) mit dem größten Nicht-Ausreißer-Ergebnis (${formatValue(stats.whiskerMax)}).`
+                                            )
+                                        }
+                                        onBlur={hideTooltip}
+                                    />
+
+                                    <line
+                                        x1={scaleX(stats.whiskerMin)}
+                                        y1={plot.centerY - 18}
+                                        x2={scaleX(stats.whiskerMin)}
+                                        y2={plot.centerY + 18}
+                                        stroke="#2563eb"
+                                        strokeWidth="4"
+                                    />
+                                    <line
+                                        x1={scaleX(stats.whiskerMax)}
+                                        y1={plot.centerY - 18}
+                                        x2={scaleX(stats.whiskerMax)}
+                                        y2={plot.centerY + 18}
+                                        stroke="#2563eb"
+                                        strokeWidth="4"
+                                    />
+
+                                    <rect
+                                        x={scaleX(stats.q1)}
+                                        y={plot.boxY}
+                                        width={Math.max(0, scaleX(stats.median) - scaleX(stats.q1))}
+                                        height={plot.boxHeight}
+                                        fill="#93c5fd"
+                                        fillOpacity="0.45"
+                                        stroke="#2563eb"
+                                        strokeWidth="2"
+                                        tabIndex="0"
+                                        className="focusable-svg"
+                                        aria-describedby={tooltipId}
+                                        onMouseEnter={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Linke Boxhälfte",
+                                                `Zwischen Q1 (${formatValue(stats.q1)}) und Median (${formatValue(stats.median)}) liegen 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onMouseMove={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Linke Boxhälfte",
+                                                `Zwischen Q1 (${formatValue(stats.q1)}) und Median (${formatValue(stats.median)}) liegen 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onMouseLeave={hideTooltip}
+                                        onFocus={(e) =>
+                                            showTooltipFromElement(
+                                                e.currentTarget,
+                                                "Linke Boxhälfte",
+                                                `Zwischen Q1 (${formatValue(stats.q1)}) und Median (${formatValue(stats.median)}) liegen 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onBlur={hideTooltip}
+                                    />
+
+                                    <rect
+                                        x={scaleX(stats.median)}
+                                        y={plot.boxY}
+                                        width={Math.max(0, scaleX(stats.q3) - scaleX(stats.median))}
+                                        height={plot.boxHeight}
+                                        fill="#60a5fa"
+                                        fillOpacity="0.45"
+                                        stroke="#2563eb"
+                                        strokeWidth="2"
+                                        tabIndex="0"
+                                        className="focusable-svg"
+                                        aria-describedby={tooltipId}
+                                        onMouseEnter={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Rechte Boxhälfte",
+                                                `Zwischen Median (${formatValue(stats.median)}) und Q3 (${formatValue(stats.q3)}) liegen weitere 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onMouseMove={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Rechte Boxhälfte",
+                                                `Zwischen Median (${formatValue(stats.median)}) und Q3 (${formatValue(stats.q3)}) liegen weitere 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onMouseLeave={hideTooltip}
+                                        onFocus={(e) =>
+                                            showTooltipFromElement(
+                                                e.currentTarget,
+                                                "Rechte Boxhälfte",
+                                                `Zwischen Median (${formatValue(stats.median)}) und Q3 (${formatValue(stats.q3)}) liegen weitere 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onBlur={hideTooltip}
+                                    />
+
+                                    <line
+                                        x1={scaleX(stats.q1)}
+                                        y1={plot.boxY}
+                                        x2={scaleX(stats.q1)}
+                                        y2={plot.boxY + plot.boxHeight}
+                                        stroke="#1d4ed8"
+                                        strokeWidth="3"
+                                        tabIndex="0"
+                                        className="focusable-svg"
+                                        aria-describedby={tooltipId}
+                                        onMouseEnter={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Q1",
+                                                `Unter diesem Wert (${formatValue(stats.q1)}) liegen etwa 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onMouseMove={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Q1",
+                                                `Unter diesem Wert (${formatValue(stats.q1)}) liegen etwa 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onMouseLeave={hideTooltip}
+                                        onFocus={(e) =>
+                                            showTooltipFromElement(
+                                                e.currentTarget,
+                                                "Q1",
+                                                `Unter diesem Wert (${formatValue(stats.q1)}) liegen etwa 25 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onBlur={hideTooltip}
+                                    />
+
+                                    <line
+                                        x1={scaleX(stats.median)}
+                                        y1={plot.boxY}
+                                        x2={scaleX(stats.median)}
+                                        y2={plot.boxY + plot.boxHeight}
+                                        stroke="#1e3a8a"
+                                        strokeWidth="5"
+                                        tabIndex="0"
+                                        className="focusable-svg"
+                                        aria-describedby={tooltipId}
+                                        onMouseEnter={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Median",
+                                                `Der Median ist ${formatValue(stats.median)}. 50 % der sortierten Werte liegen links davon und 50 % rechts davon.`
+                                            )
+                                        }
+                                        onMouseMove={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Median",
+                                                `Der Median ist ${formatValue(stats.median)}. 50 % der sortierten Werte liegen links davon und 50 % rechts davon.`
+                                            )
+                                        }
+                                        onMouseLeave={hideTooltip}
+                                        onFocus={(e) =>
+                                            showTooltipFromElement(
+                                                e.currentTarget,
+                                                "Median",
+                                                `Der Median ist ${formatValue(stats.median)}. 50 % der sortierten Werte liegen links davon und 50 % rechts davon.`
+                                            )
+                                        }
+                                        onBlur={hideTooltip}
+                                    />
+
+                                    <line
+                                        x1={scaleX(stats.q3)}
+                                        y1={plot.boxY}
+                                        x2={scaleX(stats.q3)}
+                                        y2={plot.boxY + plot.boxHeight}
+                                        stroke="#3730a3"
+                                        strokeWidth="3"
+                                        tabIndex="0"
+                                        className="focusable-svg"
+                                        aria-describedby={tooltipId}
+                                        onMouseEnter={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Q3",
+                                                `Unter diesem Wert (${formatValue(stats.q3)}) liegen etwa 75 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onMouseMove={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Q3",
+                                                `Unter diesem Wert (${formatValue(stats.q3)}) liegen etwa 75 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onMouseLeave={hideTooltip}
+                                        onFocus={(e) =>
+                                            showTooltipFromElement(
+                                                e.currentTarget,
+                                                "Q3",
+                                                `Unter diesem Wert (${formatValue(stats.q3)}) liegen etwa 75 % der sortierten Daten.`
+                                            )
+                                        }
+                                        onBlur={hideTooltip}
+                                    />
+
+                                    <g
+                                        transform={`translate(${scaleX(stats.mean)}, ${plot.centerY})`}
+                                        opacity="0.8"
+                                        tabIndex="0"
+                                        className="focusable-svg"
+                                        aria-describedby={tooltipId}
+                                        onMouseEnter={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Mittelwert",
+                                                `Der Durchschnitt liegt bei ${formatValue(stats.mean)} ${preset.unit} und reagiert stärker auf Ausreißer als der Median.`
+                                            )
+                                        }
+                                        onMouseMove={(e) =>
+                                            showTooltipFromEvent(
+                                                e,
+                                                "Mittelwert",
+                                                `Der Durchschnitt liegt bei ${formatValue(stats.mean)} ${preset.unit} und reagiert stärker auf Ausreißer als der Median.`
+                                            )
+                                        }
+                                        onMouseLeave={hideTooltip}
+                                        onFocus={(e) =>
+                                            showTooltipFromElement(
+                                                e.currentTarget,
+                                                "Mittelwert",
+                                                `Der Durchschnitt liegt bei ${formatValue(stats.mean)} ${preset.unit} und reagiert stärker auf Ausreißer als der Median.`
+                                            )
+                                        }
+                                        onBlur={hideTooltip}
+                                    >
+                                        <line x1="-9" y1="-9" x2="9" y2="9" stroke="#ef4444" strokeWidth="4" />
+                                        <line x1="-9" y1="9" x2="9" y2="-9" stroke="#ef4444" strokeWidth="4" />
+                                    </g>
+
+                                    {showOutliers &&
+                                        stats.outlierObjects.map((item) => (
+                                            <circle
+                                                key={`outlier-${item.id}`}
+                                                cx={scaleX(item.value)}
+                                                cy={plot.outlierY}
+                                                r="6"
+                                                fill="#f59e0b"
+                                                stroke="#fff"
+                                                strokeWidth="2"
+                                                tabIndex="0"
+                                                className="focusable-svg"
+                                                aria-describedby={tooltipId}
+                                                onMouseEnter={(e) =>
+                                                    showTooltipFromEvent(
+                                                        e,
+                                                        "Ausreißer",
+                                                        `Der Wert ${formatValue(item.value)} liegt außerhalb der 1,5·IQR-Grenzen.`
+                                                    )
+                                                }
+                                                onMouseMove={(e) =>
+                                                    showTooltipFromEvent(
+                                                        e,
+                                                        "Ausreißer",
+                                                        `Der Wert ${formatValue(item.value)} liegt außerhalb der 1,5·IQR-Grenzen.`
+                                                    )
+                                                }
+                                                onMouseLeave={hideTooltip}
+                                                onFocus={(e) =>
+                                                    showTooltipFromElement(
+                                                        e.currentTarget,
+                                                        "Ausreißer",
+                                                        `Der Wert ${formatValue(item.value)} liegt außerhalb der 1,5·IQR-Grenzen.`
+                                                    )
+                                                }
+                                                onBlur={hideTooltip}
+                                            />
+                                        ))}
+                                </g>
+                            )}
+
+                            {data.map((item) => {
+                                const sortedValues = stats ? stats.sorted : [];
+                                const firstIndex = sortedValues.findIndex((v) => v === item.value);
+                                const rankText = firstIndex >= 0 ? `${firstIndex + 1} von ${sortedValues.length}` : "–";
+
+                                return (
+                                    <g key={item.id}>
+                                        <circle
+                                            cx={scaleX(item.value)}
+                                            cy={plot.lineY}
+                                            r={draggingId === item.id ? 8 : 7}
+                                            fill={draggingId === item.id ? "#1d4ed8" : "#3b82f6"}
+                                            stroke="#ffffff"
+                                            strokeWidth="2"
+                                            className="data-point focusable-svg"
+                                            style={{ touchAction: "none" }}
+                                            tabIndex="0"
+                                            aria-describedby={tooltipId}
+                                            onPointerDown={(e) => startDrag(e, item.id)}
+                                            onPointerMove={(e) => moveDrag(e, item.id)}
+                                            onPointerUp={(e) => endDrag(e, item.id)}
+                                            onPointerCancel={(e) => endDrag(e, item.id)}
+                                            onMouseEnter={(e) =>
+                                                showTooltipFromEvent(
+                                                    e,
+                                                    "Datenpunkt",
+                                                    `Wert: ${formatValue(item.value)} ${preset.unit}. Sortierter Rang: ${rankText}. Ziehen zum Verschieben, Doppelklick zum Löschen.`
+                                                )
+                                            }
+                                            onMouseMove={(e) =>
+                                                draggingId !== item.id &&
+                                                showTooltipFromEvent(
+                                                    e,
+                                                    "Datenpunkt",
+                                                    `Wert: ${formatValue(item.value)} ${preset.unit}. Sortierter Rang: ${rankText}. Ziehen zum Verschieben, Doppelklick zum Löschen.`
+                                                )
+                                            }
+                                            onMouseLeave={() => {
+                                                if (draggingId !== item.id) hideTooltip();
+                                            }}
+                                            onFocus={(e) =>
+                                                showTooltipFromElement(
+                                                    e.currentTarget,
+                                                    "Datenpunkt",
+                                                    `Wert: ${formatValue(item.value)} ${preset.unit}. Sortierter Rang: ${rankText}. Ziehen zum Verschieben, Doppelklick zum Löschen.`
+                                                )
+                                            }
+                                            onBlur={hideTooltip}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                            }}
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation();
+                                                removePoint(item.id);
+                                            }}
+                                        >
+                                            <title>
+                                                Wert: {formatValue(item.value)} {preset.unit}
+                                            </title>
+                                        </circle>
+
+                                        {draggingId === item.id && (
+                                            <text
+                                                x={scaleX(item.value)}
+                                                y={plot.lineY - 18}
+                                                textAnchor="middle"
+                                                className="fill-blue-700 font-bold"
+                                            >
+                                                {formatValue(item.value)}
+                                            </text>
+                                        )}
+                                    </g>
+                                );
+                            })}
+                        </svg>
+
+                        <div
+                            id={tooltipId}
+                            role="tooltip"
+                            className={`absolute z-20 max-w-xs bg-slate-900 text-white text-sm rounded-xl px-3 py-2 shadow-2xl pointer-events-none transition-opacity ${
+                                tooltip.visible ? "opacity-100" : "opacity-0"
+                            }`}
+                            style={{
+                                left: `${tooltip.x}px`,
+                                top: `${tooltip.y}px`,
+                                transform: "translate(0, -100%)",
+                            }}
+                        >
+                            <div className="font-bold mb-1">{tooltip.title}</div>
+                            <div className="leading-snug text-slate-100">{tooltip.text}</div>
+                        </div>
+                    </div>
+
+                    {stats && (
+                        <div className="grid grid-cols-2 md:grid-cols-7 gap-3 text-center mb-8">
+                            <StatCard title="Anzahl" value={data.length} color="bg-slate-100" />
+                            <StatCard title="Minimum" value={formatValue(stats.min)} color="bg-slate-100" />
+                            <StatCard title="Q1" value={formatValue(stats.q1)} color="bg-blue-50 border border-blue-200" />
+                            <StatCard title="Median" value={formatValue(stats.median)} color="bg-blue-200 shadow-md" />
+                            <StatCard title="Q3" value={formatValue(stats.q3)} color="bg-blue-100 border border-blue-200" />
+                            <StatCard title="Maximum" value={formatValue(stats.max)} color="bg-slate-100" />
+                            <StatCard
+                                title="Mittelwert"
+                                value={formatValue(stats.mean)}
+                                color="bg-red-50 border border-red-200"
+                                text="text-red-700"
+                            />
+                        </div>
+                    )}
+
+                    {stats && (
+                        <div className="bg-white rounded-2xl shadow-xl p-4 mb-8 border border-slate-100">
+                            <h3 className="text-2xl font-bold text-slate-800 mb-3">Quartile verstehen</h3>
+
+                            <p className="text-slate-600 mb-4">
+                                Sortiere zuerst alle Werte. Dann berechnest du für Q1, Median und Q3 die Positionen
+                                0,25·n, 0,5·n und 0,75·n in der sortierten Liste.
+                            </p>
+
+                            <div className="grid md:grid-cols-3 gap-4 mb-5">
+                                <QuartileRuleCard
+                                    title="Q1"
+                                    color="bg-blue-50 border border-blue-200"
+                                    info={stats.quartiles.q1}
+                                    n={stats.n}
+                                    formatValue={formatValue}
+                                />
+                                <QuartileRuleCard
+                                    title="Median"
+                                    color="bg-blue-100 border border-blue-300"
+                                    info={stats.quartiles.q2}
+                                    n={stats.n}
+                                    formatValue={formatValue}
+                                />
+                                <QuartileRuleCard
+                                    title="Q3"
+                                    color="bg-indigo-50 border border-indigo-200"
+                                    info={stats.quartiles.q3}
+                                    n={stats.n}
+                                    formatValue={formatValue}
+                                />
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 text-sm mb-4">
+                                <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">Q1-Rang</span>
+                                <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-800 border border-blue-300">Median-Rang</span>
+                                <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Q3-Rang</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                                {stats.sortedObjects.map((item, index) => (
+                                    <SortedValueCard
+                                        key={`sorted-${item.id}-${index}`}
+                                        rank={index + 1}
+                                        total={stats.n}
+                                        value={item.value}
+                                        labels={getRankLabels(index + 1)}
+                                        formatValue={formatValue}
+                                        formatPercent={formatPercent}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {stats && (
+                        <div className="bg-white rounded-2xl shadow-xl p-4 mb-8 border border-slate-100">
+                            <h3 className="text-2xl font-bold text-slate-800 mb-4">Weitere Kennwerte</h3>
+                            <div className="grid md:grid-cols-4 gap-3 text-center">
+                                <StatCard title="IQR" value={formatValue(stats.iqr)} color="bg-indigo-50 border border-indigo-200" text="text-indigo-700" />
+                                <StatCard title="Whisker links" value={formatValue(stats.whiskerMin)} color="bg-sky-50 border border-sky-200" text="text-sky-700" />
+                                <StatCard title="Whisker rechts" value={formatValue(stats.whiskerMax)} color="bg-sky-50 border border-sky-200" text="text-sky-700" />
+                                <StatCard
+                                    title="Ausreißer"
+                                    value={showOutliers ? stats.outlierObjects.length : 0}
+                                    color="bg-amber-50 border border-amber-200"
+                                    text="text-amber-700"
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="bg-white rounded-2xl shadow-xl p-4 mb-8 border border-slate-100">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                            <h3 className="text-2xl font-bold text-slate-800">Datentabelle</h3>
+                            <div className="text-sm text-slate-500">
+                                Sortiert:{" "}
+                                {data.length === 0
+                                    ? "–"
+                                    : [...data]
+                                          .map((d) => d.value)
+                                          .sort((a, b) => a - b)
+                                          .map(formatValue)
+                                          .join(", ")}
+                            </div>
+                        </div>
+
+                        {data.length === 0 ? (
+                            <p className="text-slate-500">Noch keine Daten vorhanden.</p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="border-b border-slate-200 text-slate-600">
+                                            <th className="py-3 px-3 font-semibold">Nr.</th>
+                                            <th className="py-3 px-3 font-semibold">Wert</th>
+                                            <th className="py-3 px-3 font-semibold">Einheit</th>
+                                            <th className="py-3 px-3 font-semibold">Aktion</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.map((item, index) => (
+                                            <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50">
+                                                <td className="py-3 px-3 text-slate-500">{index + 1}</td>
+                                                <td className="py-3 px-3 font-semibold text-slate-800">
+                                                    {formatValue(item.value)}
+                                                </td>
+                                                <td className="py-3 px-3 text-slate-600">{preset.unit}</td>
+                                                <td className="py-3 px-3">
+                                                    <button
+                                                        onClick={() => removePoint(item.id)}
+                                                        className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-full hover:bg-red-200 transition"
+                                                    >
+                                                        Löschen
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-slate-800 p-6 rounded-2xl text-slate-100 shadow-lg">
+                        <h3 className="text-2xl font-bold mb-4">Interaktionen</h3>
+                        <div className="grid md:grid-cols-2 gap-6 text-slate-300">
+                            <ul className="space-y-3">
+                                <li><strong className="text-white">Hover oder Fokus:</strong> Auf Punkte, Quartile, Box, Whisker, Mittelwert und Ausreißer erscheinen erklärende Tooltips.</li>
+                                <li><strong className="text-white">Ziehen:</strong> Bewege einen Punkt nach links oder rechts und beobachte sofort, wie sich Median, Quartile und Mittelwert verändern.</li>
+                            </ul>
+                            <ul className="space-y-3">
+                                <li><strong className="text-white">Doppelklick:</strong> Entfernt einen Datenpunkt direkt aus der Darstellung.</li>
+                                <li><strong className="text-white">Sortierte Liste:</strong> Die markierten Ränge helfen beim Verständnis, warum genau diese Werte Q1, Median und Q3 sind.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function QuartileRuleCard({ title, info, n, color, formatValue }) {
+            const positionText = Number(info.rawPosition).toLocaleString("de-DE", {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2,
+            });
+
+            return (
+                <div className={`${color} rounded-xl p-4`}>
+                    <div className="text-lg font-bold mb-2">{title}</div>
+                    <div className="text-sm text-slate-700 mb-2">
+                        Position: {info.p.toLocaleString("de-DE")} · {n} = {positionText}
+                    </div>
+
+                    {info.mode === "average" ? (
+                        <>
+                            <div className="text-sm text-slate-700 mb-1">
+                                Da die Position ganzzahlig ist, mitteln wir Rang {info.ranks[0]} und Rang {info.ranks[1]}.
+                            </div>
+                            <div className="text-sm text-slate-700 mb-2">
+                                Also: ({formatValue(info.values[0])} + {formatValue(info.values[1])}) / 2
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="text-sm text-slate-700 mb-1">
+                                Da die Position nicht ganzzahlig ist, nehmen wir den nächsten Rang nach oben.
+                            </div>
+                            <div className="text-sm text-slate-700 mb-2">
+                                Also: Rang {info.ranks[0]} mit dem Wert {formatValue(info.values[0])}
+                            </div>
+                        </>
+                    )}
+
+                    <div className="text-2xl font-black text-slate-800">
+                        {title} = {formatValue(info.value)}
+                    </div>
+                </div>
+            );
+        }
+
+        function SortedValueCard({ rank, total, value, labels, formatValue, formatPercent }) {
+            let style = "bg-slate-50 border border-slate-200 text-slate-800";
+
+            if (labels.includes("Median")) {
+                style = "bg-blue-100 border border-blue-300 text-blue-900";
+            } else if (labels.includes("Q1")) {
+                style = "bg-blue-50 border border-blue-200 text-blue-800";
+            } else if (labels.includes("Q3")) {
+                style = "bg-indigo-50 border border-indigo-200 text-indigo-800";
+            }
+
+            return (
+                <div className={`${style} rounded-xl p-3`}>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="text-xs font-semibold opacity-80">Rang {rank}</div>
+                        <div className="flex flex-wrap gap-1 justify-end">
+                            {labels.map((label) => (
+                                <span
+                                    key={label}
+                                    className="text-[10px] px-2 py-0.5 rounded-full bg-white/80 border border-current"
+                                >
+                                    {label}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="text-2xl font-black mb-1">{formatValue(value)}</div>
+                    <div className="text-xs opacity-70">
+                        Bis hier: {formatPercent((rank / total) * 100)}
+                    </div>
+                </div>
+            );
+        }
+
+        function StatCard({ title, value, color, text = "text-slate-800" }) {
+            return (
+                <div className={`${color} ${text} p-3 rounded-xl transition-all duration-200 hover:-translate-y-1`}>
+                    <div className="text-xs font-semibold mb-2 opacity-80 h-8 flex items-center justify-center">
+                        {title}
+                    </div>
+                    <div className="text-3xl font-black">{value}</div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<App />);
+    </script>
+</body>
+</html>
