@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multiplikations-Bingo mit n-seitigen Würfeln</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(99,102,241,0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(16,185,129,0.16), transparent 24%),
+        linear-gradient(180deg, #f8fafc, #eef2ff 45%, #f8fafc);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .glass {
+      backdrop-filter: blur(10px);
+      background: rgba(255,255,255,0.76);
+      box-shadow: 0 16px 40px rgba(15,23,42,0.10);
+      border: 1px solid rgba(255,255,255,0.7);
+    }
+    .dice-face {
+      background: linear-gradient(145deg, #ffffff, #eef2ff);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 14px 30px rgba(79,70,229,0.16);
+      border: 1px solid rgba(99,102,241,0.16);
+    }
+    .bingo-cell { aspect-ratio: 1 / 1; }
+    .bingo-preview {
+      display: grid;
+      gap: 0.4rem;
+      background: #e2e8f0;
+      padding: 0.4rem;
+      border-radius: 1rem;
+    }
+    @keyframes dice-pop {
+      0%   { transform: scale(0.7) rotate(-8deg); opacity: 0.4; }
+      60%  { transform: scale(1.15) rotate(3deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+    @keyframes result-flip {
+      0%   { transform: rotateY(90deg) scale(0.9); opacity: 0; }
+      100% { transform: rotateY(0deg) scale(1);   opacity: 1; }
+    }
+    .animate-dice-pop  { animation: dice-pop  0.35s cubic-bezier(.22,.68,0,1.4) both; }
+    .animate-result-flip { animation: result-flip 0.3s ease-out both; perspective: 600px; }
+
+    /* Fullscreen overlay */
+    .fs-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 3rem;
+    }
+    .fs-dice-face {
+      background: rgba(255,255,255,0.15);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 2.5rem;
+      backdrop-filter: blur(8px);
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    // --- Web Audio API Synth für "Klack"-Sound ---
+    function playDiceSound() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        
+        function playTock(delay, pitch) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          
+          osc.type = 'sine'; // Sanfterer, hölzerner Klang
+          osc.frequency.setValueAtTime(pitch, ctx.currentTime + delay);
+          osc.frequency.exponentialRampToValueAtTime(pitch * 0.4, ctx.currentTime + delay + 0.08);
+          
+          gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+          gain.gain.linearRampToValueAtTime(1, ctx.currentTime + delay + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.1);
+          
+          osc.start(ctx.currentTime + delay);
+          osc.stop(ctx.currentTime + delay + 0.1);
+        }
+        
+        // Zwei schnelle "Klacks" nacheinander
+        playTock(0, 450);
+        playTock(0.07, 350);
+      } catch (e) {
+        console.warn('Audio wird nicht unterstützt', e);
+      }
+    }
+
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function shuffle(array) {
+      const copy = [...array];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function buildTaskPool(n) {
+      const tasks = [];
+      for (let a = 1; a <= n; a++) {
+        for (let b = 1; b <= n; b++) {
+          tasks.push({ a, b, product: a * b, id: `${a}x${b}` });
+        }
+      }
+      return tasks;
+    }
+
+    function formatTask(task) {
+      return `${task.a} · ${task.b}`;
+    }
+
+    function buildProductPool(n) {
+      return Array.from(new Set(buildTaskPool(n).map(task => task.product)))
+        .sort((a, b) => a - b)
+        .map(product => ({ product, id: `p-${product}` }));
+    }
+
+    // --- Primes helpers ---
+    function primesUpTo(n) {
+      const sieve = Array(n + 1).fill(true);
+      sieve[0] = sieve[1] = false;
+      for (let i = 2; i * i <= n; i++) if (sieve[i]) for (let j = i * i; j <= n; j += i) sieve[j] = false;
+      return Array.from({ length: n - 1 }, (_, i) => i + 2).filter(i => sieve[i]);
+    }
+
+    function buildPrimeTaskPool(n) {
+      const ps = primesUpTo(n);
+      const tasks = [];
+      for (const a of ps) for (const b of ps) tasks.push({ a, b, product: a * b, id: `${a}x${b}` });
+      return tasks;
+    }
+
+    function buildPrimeProductPool(n) {
+      return Array.from(new Set(buildPrimeTaskPool(n).map(t => t.product)))
+        .sort((a, b) => a - b)
+        .map(product => ({ product, id: `p-${product}` }));
+    }
+
+    // --- Fractions helpers ---
+    function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+
+    function buildFractionPool(n) {
+      const seen = new Set();
+      const pool = [];
+      for (let a = 1; a <= n; a++) {
+        for (let b = 1; b <= n; b++) {
+          const g = gcd(a, b);
+          const id = `${a/g}/${b/g}`;
+          if (!seen.has(id)) {
+            seen.add(id);
+            pool.push({ a: a/g, b: b/g, id });
+          }
+        }
+      }
+      return pool;
+    }
+
+    function generateUniqueCardsFromPool({ pool, size, count }) {
+      const cellsPerCard = size * size;
+      if (pool.length < cellsPerCard) {
+        throw new Error(`Zu wenige verschiedene Einträge für ein ${size}×${size}-Raster. Benötigt: ${cellsPerCard}, verfügbar: ${pool.length}.`);
+      }
+      const cards = [];
+      const signatures = new Set();
+      let attempts = 0;
+      const maxAttempts = Math.max(5000, count * 400);
+      while (cards.length < count && attempts < maxAttempts) {
+        attempts++;
+        const selection = shuffle(pool).slice(0, cellsPerCard);
+        const signature = selection.map(item => item.id).sort().join('|');
+        if (!signatures.has(signature)) {
+          signatures.add(signature);
+          cards.push({ id: cards.length + 1, entries: selection });
+        }
+      }
+      if (cards.length < count) throw new Error('Nicht genügend einzigartige Bingo-Karten möglich. Erhöhe n oder reduziere Anzahl/Rastergröße.');
+      return cards;
+    }
+
+    function Fraction({ num, den, className = '' }) {
+      if (den === 1) {
+        return <span className={`inline-flex items-center leading-none ${className}`}>{num}</span>;
+      }
+
+      return (
+        <span className={`inline-flex flex-col items-center leading-none ${className}`} style={{verticalAlign:'middle'}}>
+          <span className="border-b-[0.1em] border-current px-2 pb-[0.1em] leading-tight">{num}</span>
+          <span className="px-2 pt-[0.1em] leading-tight">{den}</span>
+        </span>
+      );
+    }
+
+    function Dice({ value, sides, label, rollKey }) {
+      const len = String(value).length;
+      // Dynamische Skalierung für reguläre Würfel-Ansicht
+      const fontSize = len >= 5 ? 'text-2xl' : len === 4 ? 'text-3xl' : len === 3 ? 'text-4xl' : 'text-5xl';
+      
+      return (
+        <div className="flex flex-col items-center gap-3">
+          <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{label}</div>
+          <div key={rollKey} className="dice-face h-28 w-28 rounded-3xl flex items-center justify-center animate-dice-pop">
+            <span className={`${fontSize} font-black text-indigo-600 select-none px-2 text-center`}>{value}</span>
+          </div>
+          <div className="text-xs text-slate-500">1 bis {sides}</div>
+        </div>
+      );
+    }
+
+    function BingoCard({ card, size, title, gameMode }) {
+      return (
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.25em] text-indigo-500 font-bold">Bingo</div>
+              <div className="text-lg font-bold text-slate-800">{title}</div>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">{size} × {size}</div>
+          </div>
+          <div className="bingo-preview" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
+            {card.entries.map((entry, idx) => (
+              <div
+                key={`${card.id}-${idx}-${entry.id}`}
+                className="bingo-cell rounded-2xl bg-white p-2 flex items-center justify-center text-center border border-slate-200"
+              >
+                {gameMode === 'fractions' ? (
+                  <Fraction num={entry.a} den={entry.b} className="text-[clamp(0.72rem,1.3vw,0.95rem)] font-semibold text-slate-700" />
+                ) : (
+                  <div className="text-[clamp(0.72rem,1.3vw,0.95rem)] leading-tight font-semibold text-slate-700 break-words">
+                    {entry.product}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [sides, setSides] = useState(6);
+      const [sidesInput, setSidesInput] = useState('6');
+      const [gridSize, setGridSize] = useState(4);
+      const [gridSizeInput, setGridSizeInput] = useState('4');
+      const [cardCount, setCardCount] = useState(4);
+      const [cardCountInput, setCardCountInput] = useState('4');
+      const [die1, setDie1] = useState(1);
+      const [die2, setDie2] = useState(1);
+      const [history, setHistory] = useState([]);
+      const [remainingProducts, setRemainingProducts] = useState([]);
+      const [cards, setCards] = useState([]);
+      const [error, setError] = useState('');
+      const [adminMode, setAdminMode] = useState(false);
+
+      const [timerEnabled, setTimerEnabled] = useState(false);
+      const [timerValue, setTimerValue] = useState(5);
+      const [timerUnit, setTimerUnit] = useState('s');
+      const [timerCountdown, setTimerCountdown] = useState(null);
+      const timerRef = React.useRef(null);
+      const countdownRef = React.useRef(null);
+
+      const [rollKey, setRollKey] = useState(0);
+      const [fullscreen, setFullscreen] = useState(false);
+
+      const [gameMode, setGameMode] = useState('multiplication');
+      
+      const [scaleK1Input, setScaleK1Input] = useState('2');
+      const [scaleK2Input, setScaleK2Input] = useState('1');
+      const [scaleK3Input, setScaleK3Input] = useState('1');
+      const [scaleMode, setScaleMode] = useState('k1only'); 
+      const [currentK, setCurrentK] = useState(2); 
+
+      const k1 = Math.max(1, parseInt(scaleK1Input) || 1);
+      const k2 = Math.max(1, parseInt(scaleK2Input) || 1);
+      const k3 = Math.max(1, parseInt(scaleK3Input) || 1);
+
+      const productTaskMap = useMemo(() => {
+        const map = new Map();
+        const pool = gameMode === 'primes' ? buildPrimeTaskPool(sides) : buildTaskPool(sides);
+        pool.forEach(task => {
+          const key = gameMode === 'fractions'
+            ? (() => { const g = gcd(task.a, task.b); return `${task.a/g}/${task.b/g}`; })()
+            : task.product;
+          if (!map.has(key)) map.set(key, []);
+          map.get(key).push(task);
+        });
+        return map;
+      }, [sides, gameMode]);
+
+      const uniqueProductValues = useMemo(() => {
+        const keys = Array.from(productTaskMap.keys());
+        if (gameMode === 'fractions') return keys.sort((a, b) => {
+          const [an, ad] = a.split('/').map(Number);
+          const [bn, bd] = b.split('/').map(Number);
+          return an/ad - bn/bd;
+        });
+        return keys.sort((a, b) => a - b);
+      }, [productTaskMap, gameMode]);
+
+      useEffect(() => {
+        setRemainingProducts(uniqueProductValues);
+        setHistory([]);
+        setDie1(1);
+        setDie2(1);
+      }, [uniqueProductValues]);
+
+      const poolStats = useMemo(() => {
+        if (gameMode === 'fractions') {
+          const pool = buildFractionPool(sides);
+          return { totalTasks: sides * sides, uniqueProducts: pool.length };
+        }
+        if (gameMode === 'primes') {
+          const ps = primesUpTo(sides);
+          return { totalTasks: ps.length * ps.length, uniqueProducts: buildPrimeProductPool(sides).length };
+        }
+        const totalTasks = sides * sides;
+        const uniqueProducts = buildProductPool(sides).length;
+        return { totalTasks, uniqueProducts };
+      }, [sides, gameMode]);
+
+      function rollDice() {
+        if (remainingProducts.length === 0) {
+          setError('Alle möglichen Ergebnisse dieser Spielrunde wurden bereits gezogen. Setze die Runde zurück, um erneut zu starten.');
+          return;
+        }
+
+        // Sound abspielen!
+        playDiceSound();
+
+        const kChoices = [k1, k2, k3];
+        let chosenK = k1;
+        if (scaleMode === 'random') chosenK = kChoices[randomInt(0, 2)];
+        else if (scaleMode === 'product') chosenK = k1 * k2 * k3;
+        
+        setCurrentK(chosenK);
+
+        const selectedKey = remainingProducts[randomInt(0, remainingProducts.length - 1)];
+        const matchingTasks = productTaskMap.get(selectedKey) || [];
+        const task = matchingTasks[randomInt(0, matchingTasks.length - 1)];
+
+        setDie1(task.a);
+        setDie2(task.b);
+        setRemainingProducts(prev => prev.filter(k => k !== selectedKey));
+        setHistory(prev => [{ a: task.a, b: task.b, k: chosenK, key: selectedKey, timestamp: new Date().toLocaleTimeString('de-DE') }, ...prev].slice(0, 12));
+        setError('');
+        setRollKey(k => k + 1);
+      }
+
+      function resetRound() {
+        setTimerEnabled(false);
+        stopTimer();
+        setRemainingProducts(uniqueProductValues);
+        setHistory([]);
+        setDie1(1);
+        setDie2(1);
+        setError('');
+        
+        let chosenK = k1;
+        if (scaleMode === 'random') chosenK = [k1, k2, k3][randomInt(0, 2)];
+        else if (scaleMode === 'product') chosenK = k1 * k2 * k3;
+        setCurrentK(chosenK);
+      }
+
+      function getTimerMs() {
+        const val = parseFloat(timerValue) || 1;
+        return timerUnit === 's' ? val * 1000 : val;
+      }
+
+      function startTimer() {
+        stopTimer();
+        const ms = getTimerMs();
+        if (ms < 100) return;
+        setTimerCountdown(ms);
+
+        let remaining = ms;
+        countdownRef.current = setInterval(() => {
+          remaining -= 100;
+          setTimerCountdown(Math.max(0, remaining));
+        }, 100);
+
+        timerRef.current = setInterval(() => {
+          remaining = ms;
+          setTimerCountdown(ms);
+          rollDiceRef.current();
+        }, ms);
+      }
+
+      function stopTimer() {
+        clearInterval(timerRef.current);
+        clearInterval(countdownRef.current);
+        timerRef.current = null;
+        countdownRef.current = null;
+        setTimerCountdown(null);
+      }
+
+      const rollDiceRef = React.useRef(null);
+      rollDiceRef.current = rollDice;
+
+      useEffect(() => {
+        if (timerEnabled) startTimer();
+        else stopTimer();
+        return () => stopTimer();
+      }, [timerEnabled, timerValue, timerUnit]);
+
+      useEffect(() => {
+        if (remainingProducts.length === 0 && timerEnabled) setTimerEnabled(false);
+      }, [remainingProducts]);
+
+      function handleGenerateCards() {
+        try {
+          let pool;
+          if (gameMode === 'fractions') pool = buildFractionPool(sides);
+          else if (gameMode === 'primes') pool = buildPrimeProductPool(sides);
+          else pool = buildProductPool(sides);
+          const generated = generateUniqueCardsFromPool({ pool, size: gridSize, count: cardCount });
+          setCards(generated);
+          setError('');
+        } catch (err) {
+          setCards([]);
+          setError(err.message || 'Fehler beim Erstellen der Bingo-Karten.');
+        }
+      }
+
+      function drawCardOnPdf(doc, card, pageSlot, options) {
+        const { size } = options;
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const marginX = 12;
+        const gapY = 10;
+        const slotHeight = (pageHeight - 20 - gapY) / 2;
+        const slotY = pageSlot === 0 ? 10 : 10 + slotHeight + gapY;
+        const cardX = marginX;
+        const cardY = slotY;
+        const cardW = pageWidth - marginX * 2;
+        const headerH = 18;
+        const innerPad = 4;
+        const gridW = cardW - innerPad * 2;
+        const gridH = slotHeight - headerH - innerPad * 2 - 4;
+        const cellW = gridW / size;
+        const cellH = gridH / size;
+
+        doc.setDrawColor(203, 213, 225);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(cardX, cardY, cardW, slotHeight, 5, 5, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(79, 70, 229);
+        doc.setFontSize(11);
+        doc.text(`Multiplikations-Bingo #${card.id}`, cardX + 5, cardY + 8);
+
+        let fractionInfo = `k=${k1} (Einfach)`;
+        if (scaleMode === 'random') fractionInfo = `k1=${k1}, k2=${k2}, k3=${k3} (Zufall)`;
+        else if (scaleMode === 'product') fractionInfo = `k=${k1 * k2 * k3} (Produkt)`;
+
+        doc.setTextColor(51, 65, 85);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.text(`n = ${sides} | Raster ${size}×${size} | ${gameMode === 'fractions' ? `Brüche kürzen | ${fractionInfo}` : gameMode === 'primes' ? 'Primzahlen' : 'Ergebnisse'}`, cardX + 5, cardY + 14);
+
+        const startX = cardX + innerPad;
+        const startY = cardY + headerH + innerPad;
+
+        for (let row = 0; row < size; row++) {
+          for (let col = 0; col < size; col++) {
+            const idx = row * size + col;
+            const entry = card.entries[idx];
+            const x = startX + col * cellW;
+            const y = startY + row * cellH;
+            doc.setDrawColor(203, 213, 225);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(x, y, cellW, cellH, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(30, 41, 59);
+            const fontSize = Math.max(9, Math.min(14, cellW / 4));
+            doc.setFontSize(fontSize);
+            
+            if (gameMode === 'fractions') {
+              if (entry.b === 1) {
+                const text = String(entry.a);
+                const textWidth = doc.getTextWidth(text);
+                const textX = x + (cellW - textWidth) / 2;
+                const textY = y + (cellH / 2) + (fontSize * 0.38) / 2;
+                doc.text(text, textX, textY);
+              } else {
+                const numStr = String(entry.a);
+                const denStr = String(entry.b);
+                const lineW = cellW * 0.55;
+                const cx = x + cellW / 2;
+                const cy = y + cellH / 2;
+                doc.setDrawColor(30, 41, 59);
+                doc.line(cx - lineW/2, cy, cx + lineW/2, cy);
+                const numW = doc.getTextWidth(numStr);
+                doc.text(numStr, cx - numW/2, cy - 1.5);
+                const denW = doc.getTextWidth(denStr);
+                doc.text(denStr, cx - denW/2, cy + fontSize * 0.38 + 1);
+              }
+            } else {
+              const text = String(entry.product);
+              const lines = doc.splitTextToSize(text, cellW - 4);
+              const totalHeight = lines.length * (fontSize * 0.38);
+              let textY = y + (cellH / 2) - totalHeight / 2 + 2;
+              lines.forEach(line => {
+                const textWidth = doc.getTextWidth(line);
+                const textX = x + (cellW - textWidth) / 2;
+                doc.text(line, textX, textY);
+                textY += fontSize * 0.38 + 1.5;
+              });
+            }
+          }
+        }
+      }
+
+      function exportPdf() {
+        try {
+          if (!cards.length) {
+            setError('Erstelle zuerst Bingo-Karten, bevor du das PDF exportierst.');
+            return;
+          }
+
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+          cards.forEach((card, index) => {
+            if (index > 0 && index % 2 === 0) doc.addPage();
+            drawCardOnPdf(doc, card, index % 2, { size: gridSize });
+          });
+
+          const filename = `multiplikations-bingo_n${sides}_${gridSize}x${gridSize}_${cardCount}-karten.pdf`;
+          doc.save(filename);
+          setError('');
+        } catch (err) {
+          setError(err.message || 'PDF konnte nicht erstellt werden.');
+        }
+      }
+
+      const FractionSettingsBlock = () => (
+        <div className="md:col-span-full rounded-2xl bg-indigo-50/50 p-4 border border-indigo-100">
+          <span className="mb-3 block text-sm font-semibold text-slate-700">Erweiterungsfaktoren (für die Aufgaben)</span>
+          <div className="grid grid-cols-3 gap-4">
+            <label className="block">
+              <div className="text-xs text-slate-500 mb-1 font-medium">k₁</div>
+              <input type="text" inputMode="numeric" value={scaleK1Input}
+                onChange={e => setScaleK1Input(e.target.value.replace(/[^0-9]/g, ''))}
+                onBlur={() => setScaleK1Input(String(k1))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+            </label>
+            <label className="block">
+              <div className="text-xs text-slate-500 mb-1 font-medium">k₂</div>
+              <input type="text" inputMode="numeric" value={scaleK2Input}
+                onChange={e => setScaleK2Input(e.target.value.replace(/[^0-9]/g, ''))}
+                onBlur={() => setScaleK2Input(String(k2))}
+                className={`w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ${scaleMode === 'k1only' ? 'opacity-50 bg-slate-100' : ''}`}
+                disabled={scaleMode === 'k1only'} />
+            </label>
+            <label className="block">
+              <div className="text-xs text-slate-500 mb-1 font-medium">k₃</div>
+              <input type="text" inputMode="numeric" value={scaleK3Input}
+                onChange={e => setScaleK3Input(e.target.value.replace(/[^0-9]/g, ''))}
+                onBlur={() => setScaleK3Input(String(k3))}
+                className={`w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 ${scaleMode === 'k1only' ? 'opacity-50 bg-slate-100' : ''}`}
+                disabled={scaleMode === 'k1only'} />
+            </label>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <span className="text-sm font-semibold text-slate-700">Modus:</span>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input type="radio" name="scaleMode" value="k1only" checked={scaleMode === 'k1only'} onChange={() => setScaleMode('k1only')} className="w-5 h-5 accent-indigo-600" />
+              Einfach (nur k₁)
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input type="radio" name="scaleMode" value="random" checked={scaleMode === 'random'} onChange={() => setScaleMode('random')} className="w-5 h-5 accent-indigo-600" />
+              Zufällig (k₁, k₂ oder k₃)
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input type="radio" name="scaleMode" value="product" checked={scaleMode === 'product'} onChange={() => setScaleMode('product')} className="w-5 h-5 accent-indigo-600" />
+              Produkt (k₁ · k₂ · k₃)
+            </label>
+          </div>
+        </div>
+      );
+
+      // --- Hilfsfunktion für Dynamische Textgröße im Vollbildmodus ---
+      const getFsDiceFontSize = (val) => {
+        const len = String(val).length;
+        if (len >= 5) return 'text-4xl md:text-5xl lg:text-6xl';
+        if (len === 4) return 'text-5xl md:text-6xl lg:text-7xl';
+        if (len === 3) return 'text-6xl md:text-7xl lg:text-8xl';
+        return 'text-7xl md:text-8xl lg:text-9xl';
+      };
+
+      const getFsResultFontSize = (val1, val2) => {
+        const maxLen = Math.max(String(val1).length, String(val2).length);
+        if (maxLen >= 5) return 'text-6xl md:text-7xl lg:text-8xl';
+        if (maxLen === 4) return 'text-7xl md:text-8xl lg:text-9xl';
+        if (maxLen === 3) return 'text-8xl md:text-9xl lg:text-[10rem]';
+        return 'text-9xl lg:text-[12rem]';
+      };
+
+      return (
+        <>
+        <div className="min-h-screen px-4 py-8 text-slate-800">
+          <div className="mx-auto max-w-7xl">
+            <div className="glass rounded-[2rem] p-6 md:p-8">
+              <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                <div className="max-w-3xl">
+                  <div className="inline-flex rounded-full bg-indigo-100 px-4 py-1 text-sm font-bold text-indigo-700">
+                    Multiplikations-Bingo Generator
+                  </div>
+                  <h1 className="mt-4 text-3xl md:text-5xl font-black tracking-tight text-slate-900">
+                    n-seitige Würfel und Bingo-Karten
+                  </h1>
+                  <p className="mt-4 text-base md:text-lg text-slate-600 leading-relaxed">
+                    Im Spielmodus werden nur die beiden Würfel und die Multiplikationsaufgabe angezeigt — ohne Ergebnis.
+                    Im Admin-Modus lassen sich eindeutige Bingo-Karten aus allen möglichen Ergebnissen erzeugen und als A4-PDF exportieren.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:w-[28rem]">
+                  <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Aufgaben</div>
+                    <div className="mt-2 text-2xl font-black text-slate-800">{poolStats.totalTasks}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Produkte</div>
+                    <div className="mt-2 text-2xl font-black text-slate-800">{poolStats.uniqueProducts}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Karten</div>
+                    <div className="mt-2 text-2xl font-black text-slate-800">{cards.length}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Modus</div>
+                    <div className="mt-2 text-xl font-black text-indigo-600">{adminMode ? 'Admin' : 'Spiel'}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 flex flex-wrap gap-3 items-center">
+                <button
+                  onClick={() => setAdminMode(false)}
+                  className={`rounded-2xl px-5 py-3 font-bold transition ${!adminMode ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'}`}
+                >
+                  Spielmodus
+                </button>
+                <button
+                  onClick={() => setAdminMode(true)}
+                  className={`rounded-2xl px-5 py-3 font-bold transition ${adminMode ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'}`}
+                >
+                  Admin-Modus
+                </button>
+                <div className="flex flex-wrap gap-2 items-center ml-4 border-l border-slate-200 pl-4">
+                  <span className="text-sm font-semibold text-slate-500">Spielart:</span>
+                  {[['multiplication','Multiplikation'],['fractions','Brüche kürzen'],['primes','Primzahlen']].map(([m, label]) => (
+                    <button key={m} onClick={() => setGameMode(m)}
+                      className={`rounded-2xl px-4 py-2 text-sm font-bold transition ${gameMode === m ? 'bg-violet-600 text-white shadow-md shadow-violet-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {!adminMode ? (
+                <div className="mt-8 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                  <div className="space-y-6">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                        <h2 className="text-xl font-bold text-slate-900">Spieleinstellungen</h2>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 md:col-span-2">Noch verfügbare Ergebnisse in dieser Runde: <span className="font-bold text-slate-900">{remainingProducts.length}</span> von <span className="font-bold text-slate-900">{poolStats.uniqueProducts}</span></div>
+                        <label className="block md:col-span-2 lg:col-span-1">
+                          <span className="mb-2 block text-sm font-semibold text-slate-600">Seitenzahl n</span>
+                          <input type="text" inputMode="numeric" pattern="[0-9]*" value={sidesInput}
+                            onChange={e => setSidesInput(e.target.value.replace(/[^0-9]/g, ''))}
+                            onBlur={e => { const raw = e.target.value.replace(/[^0-9]/g, ''); const v = Math.max(2, Math.min(50, parseInt(raw) || 0)); if (!v) { setSidesInput(String(sides)); } else { setSides(v); setSidesInput(String(v)); } }}
+                            className={`w-full rounded-2xl border px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 ${!sidesInput ? 'border-rose-400 focus:border-rose-400' : 'border-slate-300 focus:border-indigo-500'}`} />
+                          {!sidesInput && <p className="mt-1 text-xs text-rose-500">Bitte einen Wert eingeben.</p>}
+                        </label>
+                        
+                        {gameMode === 'fractions' && <FractionSettingsBlock />}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                        <h2 className="text-xl font-bold text-slate-900">Würfel-Simulation</h2>
+                        <div className="flex flex-wrap gap-3">
+                          <button onClick={rollDice} disabled={remainingProducts.length === 0} className={`rounded-2xl px-5 py-3 font-bold text-white shadow-lg transition ${remainingProducts.length === 0 ? 'bg-slate-300 shadow-none cursor-not-allowed' : 'bg-emerald-500 shadow-emerald-200 hover:-translate-y-0.5 hover:bg-emerald-600'}`}>
+                            Zwei Würfel werfen
+                          </button>
+                          <button onClick={resetRound} className="rounded-2xl bg-slate-100 px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-200">
+                            Runde zurücksetzen
+                          </button>
+                          <button onClick={() => setFullscreen(true)} className="rounded-2xl bg-indigo-100 px-5 py-3 font-bold text-indigo-700 transition hover:bg-indigo-200" title="Präsentationsmodus">
+                            ⛶ Vollbild
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Auto-roll timer */}
+                      <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 flex flex-wrap items-center gap-3">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={timerEnabled}
+                            onChange={e => setTimerEnabled(e.target.checked)}
+                            disabled={remainingProducts.length === 0}
+                            className="w-5 h-5 accent-emerald-500"
+                          />
+                          <span className="text-sm font-semibold text-slate-700">Auto-Wurf</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={timerValue}
+                          onChange={e => setTimerValue(e.target.value)}
+                          className="w-20 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                        />
+                        <select
+                          value={timerUnit}
+                          onChange={e => setTimerUnit(e.target.value)}
+                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white"
+                        >
+                          <option value="s">s</option>
+                          <option value="ms">ms</option>
+                        </select>
+                        {timerEnabled && timerCountdown !== null && (
+                          <div className="flex items-center gap-2 ml-1">
+                            <div className="h-2 w-28 rounded-full bg-slate-200 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-emerald-400 transition-all"
+                                style={{ width: `${(timerCountdown / getTimerMs()) * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-slate-500 tabular-nums">
+                              {timerUnit === 's'
+                                ? `${(timerCountdown / 1000).toFixed(1)}s`
+                                : `${timerCountdown}ms`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid gap-6 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
+                        <div className={history.length === 0 ? 'opacity-20 pointer-events-none' : ''}>
+                          <Dice value={gameMode === 'fractions' ? currentK * die1 : die1} sides={sides} label="Würfel A" rollKey={rollKey} />
+                        </div>
+                        <div className={`text-center text-4xl font-black text-slate-300 ${history.length === 0 ? 'opacity-20' : ''}`}>
+                          {gameMode === 'fractions' ? '/' : '·'}
+                        </div>
+                        <div className={history.length === 0 ? 'opacity-20 pointer-events-none' : ''}>
+                          <Dice value={gameMode === 'fractions' ? currentK * die2 : die2} sides={sides} label="Würfel B" rollKey={rollKey} />
+                        </div>
+                        <div className={`text-center text-4xl font-black text-slate-300 ${history.length === 0 ? 'opacity-20' : ''}`}>=</div>
+                        <div className="rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-600 px-6 py-8 text-center text-white shadow-xl">
+                          {history.length === 0 ? (
+                            <>
+                              <div className="text-xs uppercase tracking-[0.25em] text-indigo-100">Bereit?</div>
+                              <div className="mt-3 text-3xl font-black leading-tight">Macht euch bereit!</div>
+                              <div className="mt-3 text-sm font-medium text-indigo-100">Noch kein Wurf.</div>
+                            </>
+                          ) : (
+                            <div key={rollKey} className="animate-result-flip">
+                              <div className="text-xs uppercase tracking-[0.25em] text-indigo-100">
+                                {gameMode === 'fractions' ? 'Bruch kürzen' : 'Aufgabe'}
+                              </div>
+                              {gameMode === 'fractions' ? (
+                                <div className="mt-3 flex justify-center">
+                                  <Fraction num={currentK * die1} den={currentK * die2} className="text-5xl font-black text-white" />
+                                </div>
+                              ) : (
+                                <div className="mt-3 text-5xl font-black">{die1} · {die2}</div>
+                              )}
+                              <div className="mt-3 text-sm font-medium text-indigo-100">
+                                {gameMode === 'fractions' ? 'Gekürzter Bruch auf der Karte.' : 'Ergebnis bleibt verborgen.'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <h2 className="text-xl font-bold text-slate-900">Letzte Würfe</h2>
+                      <div className="mt-4 space-y-2 max-h-[22rem] overflow-auto pr-1">
+                        {history.length === 0 ? (
+                          <div className="rounded-2xl bg-slate-50 p-4 text-slate-500">Noch keine Würfe vorhanden.</div>
+                        ) : history.map((entry, idx) => (
+                          <div key={`${entry.timestamp}-${idx}`} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                            <div>
+                              {gameMode === 'fractions' ? (
+                                <div className="font-semibold text-slate-700 flex items-center gap-1">
+                                  <Fraction num={entry.k * entry.a} den={entry.k * entry.b} className="text-base" />
+                                </div>
+                              ) : (
+                                <div className="font-semibold text-slate-700">{entry.a} · {entry.b}</div>
+                              )}
+                              <div className="text-xs text-slate-400">Ergebnis aus der Runde entfernt</div>
+                            </div>
+                            <div className="text-xs text-slate-400">{entry.timestamp}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <h2 className="text-xl font-bold text-slate-900">Hinweise</h2>
+                      <div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-600">
+                        <p>Im Spielmodus wird nur die Aufgabe angezeigt, nie das Resultat.</p>
+                        <p>Jedes Ergebnis wird pro Runde nur einmal gezogen, auch wenn es mehrere Aufgaben mit demselben Produkt gibt.</p>
+                        <p>Die PDF-Erstellung ist ausschließlich im Admin-Modus verfügbar.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-8 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                  <div className="space-y-6">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                        <h2 className="text-xl font-bold text-slate-900">Admin-Bereich</h2>
+                        <div className="text-sm text-slate-500">Nur PDF-Erstellung</div>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-semibold text-slate-600">Seitenzahl n</span>
+                          <input type="text" inputMode="numeric" pattern="[0-9]*" value={sidesInput}
+                            onChange={e => setSidesInput(e.target.value.replace(/[^0-9]/g, ''))}
+                            onBlur={e => { const raw = e.target.value.replace(/[^0-9]/g, ''); const v = Math.max(2, Math.min(50, parseInt(raw) || 0)); if (!v) { setSidesInput(String(sides)); } else { setSides(v); setSidesInput(String(v)); } }}
+                            className={`w-full rounded-2xl border px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 ${!sidesInput ? 'border-rose-400 focus:border-rose-400' : 'border-slate-300 focus:border-indigo-500'}`} />
+                          {!sidesInput && <p className="mt-1 text-xs text-rose-500">Bitte einen Wert eingeben.</p>}
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-semibold text-slate-600">Bingo-Raster m</span>
+                          <input type="text" inputMode="numeric" pattern="[0-9]*" value={gridSizeInput}
+                            onChange={e => setGridSizeInput(e.target.value.replace(/[^0-9]/g, ''))}
+                            onBlur={e => { const raw = e.target.value.replace(/[^0-9]/g, ''); const v = Math.max(2, Math.min(8, parseInt(raw) || 0)); if (!v) { setGridSizeInput(String(gridSize)); } else { setGridSize(v); setGridSizeInput(String(v)); } }}
+                            className={`w-full rounded-2xl border px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 ${!gridSizeInput ? 'border-rose-400 focus:border-rose-400' : 'border-slate-300 focus:border-indigo-500'}`} />
+                          {!gridSizeInput && <p className="mt-1 text-xs text-rose-500">Bitte einen Wert eingeben.</p>}
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-semibold text-slate-600">Anzahl Karten</span>
+                          <input type="text" inputMode="numeric" pattern="[0-9]*" value={cardCountInput}
+                            onChange={e => setCardCountInput(e.target.value.replace(/[^0-9]/g, ''))}
+                            onBlur={e => { const raw = e.target.value.replace(/[^0-9]/g, ''); const v = Math.max(1, Math.min(100, parseInt(raw) || 0)); if (!v) { setCardCountInput(String(cardCount)); } else { setCardCount(v); setCardCountInput(String(v)); } }}
+                            className={`w-full rounded-2xl border px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 ${!cardCountInput ? 'border-rose-400 focus:border-rose-400' : 'border-slate-300 focus:border-indigo-500'}`} />
+                          {!cardCountInput && <p className="mt-1 text-xs text-rose-500">Bitte einen Wert eingeben.</p>}
+                        </label>
+
+                        {gameMode === 'fractions' && <FractionSettingsBlock />}
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap gap-3">
+                        <button onClick={handleGenerateCards} className="rounded-2xl bg-indigo-600 px-5 py-3 font-bold text-white shadow-lg shadow-indigo-200 transition hover:-translate-y-0.5 hover:bg-indigo-700">
+                          Bingo-Karten erzeugen
+                        </button>
+                        <button onClick={exportPdf} className="rounded-2xl bg-slate-900 px-5 py-3 font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5 hover:bg-slate-800">
+                          PDF exportieren
+                        </button>
+                        <button onClick={() => { setCards([]); setError(''); }} className="rounded-2xl bg-slate-100 px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-200">
+                          Karten löschen
+                        </button>
+                      </div>
+
+                      {error && (
+                        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
+                          {error}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+                      <h2 className="text-xl font-bold text-slate-900">Hinweise für den Druck</h2>
+                      <div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-600">
+                        <p>Alle Bingo-Felder enthalten ausschließlich Aufgaben im Format a · b (oder gekürzte Brüche).</p>
+                        <p>Jede Karte wird zufällig erzeugt und als Kartenmenge eindeutig gehalten.</p>
+                        <p>Im PDF liegen immer zwei Bingo-Karten auf einer A4-Seite.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {adminMode && (
+              <div className="mt-8">
+                <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                  <h2 className="text-2xl font-black text-slate-900">Vorschau der Bingo-Karten</h2>
+                  <div className="text-sm text-slate-500">Aktuell {cards.length} Karte(n) erzeugt</div>
+                </div>
+
+                {cards.length === 0 ? (
+                  <div className="glass rounded-3xl p-10 text-center text-slate-500">
+                    Erzeuge zunächst Bingo-Karten, um hier eine Vorschau zu sehen.
+                  </div>
+                ) : (
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    {cards.map(card => (
+                      <BingoCard key={card.id} card={card} size={gridSize} title={`Karte #${card.id}`} gameMode={gameMode} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* --- Fullscreen Presentation Overlay --- */}
+        {fullscreen && (
+          <div className="fs-overlay no-print">
+            {/* Oben: Beenden-Button & Timer */}
+            <div className="absolute top-5 left-5 right-5 flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2 rounded-2xl border-2 border-white/30 px-4 py-2 bg-white/5 backdrop-blur-md">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={timerEnabled}
+                    onChange={e => setTimerEnabled(e.target.checked)}
+                    disabled={remainingProducts.length === 0}
+                    className="w-6 h-6 accent-emerald-400"
+                  />
+                  <span className="text-lg font-semibold text-white">Auto-Wurf</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={timerValue}
+                  onChange={e => setTimerValue(e.target.value)}
+                  className="w-20 rounded-xl bg-white/10 border border-white/30 px-3 py-1 text-lg text-white outline-none focus:border-white/60 ml-2 text-center"
+                />
+                <select
+                  value={timerUnit}
+                  onChange={e => setTimerUnit(e.target.value)}
+                  className="rounded-xl bg-white/10 border border-white/30 px-3 py-1 text-lg text-white outline-none focus:border-white/60"
+                >
+                  <option value="s" className="text-black">s</option>
+                  <option value="ms" className="text-black">ms</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => setFullscreen(false)}
+                className="rounded-2xl bg-white/10 px-6 py-3 text-xl font-bold text-white border-2 border-white/30 hover:bg-white/20 transition backdrop-blur-md"
+              >
+                ✕ Beenden
+              </button>
+            </div>
+
+            {/* Mitte: Das Spielgeschehen */}
+            <div className="flex flex-col items-center justify-center -mt-10 w-full px-4">
+              {history.length === 0 ? (
+                <div className="text-center text-white">
+                  <div className="text-3xl font-bold uppercase tracking-widest text-white/60 mb-6">Bereit?</div>
+                  <div className="text-7xl md:text-8xl lg:text-9xl font-black drop-shadow-lg">Macht euch bereit!</div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-center gap-6 md:gap-12 w-full">
+                    <div key={`fs-d1-${rollKey}`} className="fs-dice-face w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 flex flex-col items-center justify-center gap-2 animate-dice-pop shadow-2xl">
+                      <div className="text-white/60 text-lg font-bold uppercase tracking-widest absolute top-6">Würfel A</div>
+                      <div className={`${getFsDiceFontSize(currentK * die1)} font-black text-white px-2 text-center`}>
+                        {gameMode === 'fractions' ? currentK * die1 : die1}
+                      </div>
+                    </div>
+                    
+                    <div className="text-8xl font-black text-white/40">{gameMode === 'fractions' ? '/' : '·'}</div>
+                    
+                    <div key={`fs-d2-${rollKey}`} className="fs-dice-face w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 flex flex-col items-center justify-center gap-2 animate-dice-pop shadow-2xl" style={{animationDelay:'0.06s'}}>
+                      <div className="text-white/60 text-lg font-bold uppercase tracking-widest absolute top-6">Würfel B</div>
+                      <div className={`${getFsDiceFontSize(currentK * die2)} font-black text-white px-2 text-center`}>
+                        {gameMode === 'fractions' ? currentK * die2 : die2}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div key={`fs-task-${rollKey}`} className="animate-result-flip text-center mt-12 md:mt-16 w-full">
+                    <div className="text-white/60 text-xl font-bold uppercase tracking-widest mb-4">
+                      {gameMode === 'fractions' ? 'Bruch kürzen' : 'Aufgabe'}
+                    </div>
+                    {gameMode === 'fractions' ? (
+                      <div className="flex justify-center">
+                        <Fraction num={currentK * die1} den={currentK * die2} className={`${getFsResultFontSize(currentK * die1, currentK * die2)} font-black text-white drop-shadow-xl`} />
+                      </div>
+                    ) : (
+                      <div className={`${getFsResultFontSize(die1, die2)} font-black text-white drop-shadow-xl whitespace-nowrap`}>{die1} · {die2}</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Riesiger Würfel-Button Unten Mitte */}
+            <div className="absolute bottom-10 flex flex-col items-center w-full">
+              {timerEnabled && timerCountdown !== null && (
+                <div className="flex flex-col items-center gap-2 mb-6 w-full max-w-md">
+                  <span className="text-white/80 text-lg tabular-nums font-bold">
+                    Nächster Wurf in {timerUnit === 's' ? `${(timerCountdown / 1000).toFixed(1)}s` : `${timerCountdown}ms`}
+                  </span>
+                  <div className="h-3 w-full rounded-full bg-white/20 overflow-hidden shadow-inner">
+                    <div
+                      className="h-full rounded-full bg-emerald-400 transition-all ease-linear"
+                      style={{ width: `${(timerCountdown / getTimerMs()) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {!timerEnabled && (
+                <button
+                  onClick={rollDice}
+                  disabled={remainingProducts.length === 0}
+                  className={`rounded-full px-16 py-6 text-4xl font-black text-white shadow-[0_0_40px_rgba(16,185,129,0.4)] border-4 border-emerald-400/50 backdrop-blur-md transition-all ${remainingProducts.length === 0 ? 'bg-slate-500/50 opacity-50 border-slate-400/50 cursor-not-allowed' : 'bg-emerald-500/90 hover:bg-emerald-400 hover:scale-105 active:scale-95'}`}
+                >
+                  🎲 WÜRFELN
+                </button>
+              )}
+
+              <div className="text-white/50 text-base font-medium mt-6">
+                Noch {remainingProducts.length} von {poolStats.uniqueProducts} Ergebnissen übrig
+              </div>
+            </div>
+            
+          </div>
+        )}
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
